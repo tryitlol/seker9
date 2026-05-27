@@ -296,6 +296,46 @@ def load_users() -> dict:
 
 def save_users(u: dict):
     with open(USERS_FILE,"w",encoding="utf-8") as f: json.dump(u,f,indent=2)
+    
+def process_referral(inviter_uid, new_uid):
+    users = load_users()
+
+    inviter_uid = str(inviter_uid)
+    new_uid = str(new_uid)
+
+    if inviter_uid == new_uid:
+        return False
+
+    if new_uid not in users:
+        return False
+
+    invited = users[new_uid]
+
+    # already referred
+    if invited.get("referred_by"):
+        return False
+
+    invited["referred_by"] = inviter_uid
+
+    inviter = users.get(inviter_uid)
+    if not inviter:
+        save_users(users)
+        return False
+
+    inviter["referrals"] = inviter.get("referrals", 0) + 1
+
+    # reward at 1 invite
+    if (
+        inviter["referrals"] >= 1
+        and not inviter.get("ref_rewarded")
+    ):
+        inviter["activated"] = True
+        inviter["key_expires_at"] = None
+        inviter["key_used"] = "REFERRAL"
+        inviter["ref_rewarded"] = True
+
+    save_users(users)
+    return True
 
 def load_keys() -> dict:
     if KEYS_FILE.exists():
@@ -580,6 +620,11 @@ def get_or_create_user(uid, username="", first_name=""):
             "vip": False,
             "activated": False,
 
+            # referral system
+            "referrals": 0,
+            "referred_by": None,
+            "ref_rewarded": False,
+
             # existing stats
             "total_checked": 0,
             "sessions_count": 0,
@@ -765,18 +810,12 @@ async def gate(update, context):
         tg.first_name or ""
     )
 
-    # ONLY admin bypass
-    if is_admin(tg.id, cfg):
-        return True, cfg, u
-
-    force_channel = (
-        cfg.get("channel_username", "")
-        .replace("@", "")
-        .strip()
-    )
+    force_channel = cfg.get(
+        "force_channel",
+        ""
+    ).replace("@", "").strip()
 
     if force_channel:
-
         joined = await in_channel(
             context.bot,
             uid,
@@ -784,12 +823,10 @@ async def gate(update, context):
         )
 
         if not joined:
-
             await join_prompt(
                 update.effective_message,
                 force_channel
             )
-
             return False, None, u
 
     return True, cfg, u
@@ -807,18 +844,12 @@ async def gate_cb(update, context):
         q.from_user.first_name or ""
     )
 
-    # ONLY admin bypass
-    if is_admin(q.from_user.id, cfg):
-        return True, cfg, u
-
-    force_channel = (
-        cfg.get("channel_username", "")
-        .replace("@", "")
-        .strip()
-    )
+    force_channel = cfg.get(
+        "force_channel",
+        ""
+    ).replace("@", "").strip()
 
     if force_channel:
-
         joined = await in_channel(
             context.bot,
             uid,
@@ -826,14 +857,10 @@ async def gate_cb(update, context):
         )
 
         if not joined:
-
-            try:
-                await q.answer(
-                    "❌ Join the channel first.",
-                    show_alert=True
-                )
-            except:
-                pass
+            await q.answer(
+                "❌ Join channel first.",
+                show_alert=True
+            )
 
             await join_prompt(
                 q.message,
@@ -1901,7 +1928,16 @@ async def cmd_start(update,context):
             "🔑 <b>Activation Required</b>\n\n"
 
             "Use <code>/redeem YOUR_KEY</code> "
-            "to activate your access.",
+            "to activate your access.\n\n"
+
+            f"👥 Referrals: "
+            f"<b>{refs}/1</b>\n"
+
+            "🏆 Invite 1 Friend "
+            "= Lifetime Access\n\n"
+
+            "Share your link:\n"
+            f"<code>{ref_link}</code>",
 
             parse_mode=ParseMode.HTML
         )
@@ -2214,6 +2250,31 @@ async def _do_stop(update,context):
             if uid in active_sessions: del active_sessions[uid]
         await update.message.reply_text("🗑 Session cancelled and file deleted.")
     else: await update.message.reply_text("ℹ️ No active checking session.")
+
+async def cmd_referral(update, context):
+
+    uid = str(update.effective_user.id)
+
+    users = load_users()
+
+    user = users.get(uid, {})
+
+    me = await context.bot.get_me()
+
+    link = (
+        f"https://t.me/{me.username}"
+        f"?start=REF_{uid}"
+    )
+
+    refs = user.get("referrals", 0)
+
+    await update.message.reply_text(
+        f"🎁 Referral System\n\n"
+        f"👥 Invites: {refs}/1\n"
+        f"🏆 Reward: Lifetime Access\n\n"
+        f"Invite 1 person:\n"
+        f"{link}"
+    )
 
 async def cmd_stop(u,c): await _do_stop(u,c)
 async def cmd_cancel(u,c): await _do_stop(u,c)
@@ -6449,6 +6510,7 @@ def main():
         # ── User ──────────────────────────────────────────────────────────
         application.add_handler(CommandHandler("start",           cmd_start))
         application.add_handler(CommandHandler("redeem",          cmd_redeem))
+        application.add_handler(CommandHandler("referral", cmd_referral))
         application.add_handler(CallbackQueryHandler(verify_join, pattern="^verify_join$"))
         application.add_handler(CommandHandler("stop",            cmd_stop))
         application.add_handler(CommandHandler("cancel",          cmd_cancel))
