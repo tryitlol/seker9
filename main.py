@@ -6301,15 +6301,17 @@ def main():
         application.add_handler(CommandHandler("check",           cmd_check))
         application.add_handler(CommandHandler("myresultsfile",   cmd_myresultsfile))
         application.add_handler(CommandHandler("clean",           cmd_clean))
-        # ── Reseller (resellers only) ──────────────────────────────────────
+
+        # ── Reseller ─────────────────────────────────────────────────────
         application.add_handler(CommandHandler("rgenkey",         cmd_reseller_gen_key))
-        # ── Admin ──────────────────────────────────────────────────────────
+
+        # ── Admin ───────────────────────────────────────────────────────
         application.add_handler(CommandHandler("generate_key",    cmd_generate_key))
         application.add_handler(CommandHandler("remove_key",      cmd_remove_key))
         application.add_handler(CommandHandler("ban_user",        cmd_ban_user))
         application.add_handler(CommandHandler("unban_user",      cmd_unban_user))
-        application.add_handler(CommandHandler(["lockAll","lockall"],    cmd_lock_all))
-        application.add_handler(CommandHandler(["unlockAll","unlockall"],cmd_unlock_all))
+        application.add_handler(CommandHandler(["lockAll","lockall"],     cmd_lock_all))
+        application.add_handler(CommandHandler(["unlockAll","unlockall"], cmd_unlock_all))
         application.add_handler(CommandHandler("stopall",         cmd_stop_all_checking))
         application.add_handler(CommandHandler("continueall",     cmd_continue_all_checking))
         application.add_handler(CommandHandler("stopforvip",      cmd_stop_for_vip))
@@ -6343,15 +6345,52 @@ def main():
         application.add_handler(CommandHandler("senddata",        cmd_send_data))
         application.add_handler(CommandHandler("replacefile",     cmd_replace_file))
         application.add_handler(CommandHandler("cancel_replace",  cmd_cancel_replace))
-        # ── Reseller Panel (admin manages resellers) ───────────────────────
-        application.add_handler(CommandHandler("miniadminpanel",      cmd_mini_admin_panel))
-        application.add_handler(CommandHandler("removeminiadmin",     cmd_remove_mini_admin))
-        application.add_handler(CommandHandler("miniadminlist",       cmd_mini_admin_list))
-        application.add_handler(CommandHandler("miniadmininfo",       cmd_mini_admin_info))
-        # ── Message / callback handlers ────────────────────────────────────
-        application.add_handler(MessageHandler(filters.Document.ALL,          on_document))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
-        application.add_handler(CallbackQueryHandler(on_callback))
+
+        # ── Reseller Panel ───────────────────────────────────────────────
+        application.add_handler(CommandHandler("miniadminpanel",  cmd_mini_admin_panel))
+        application.add_handler(CommandHandler("removeminiadmin", cmd_remove_mini_admin))
+        application.add_handler(CommandHandler("miniadminlist",   cmd_mini_admin_list))
+        application.add_handler(CommandHandler("miniadmininfo",   cmd_mini_admin_info))
+
+        # ── Message / Callback ───────────────────────────────────────────
+        application.add_handler(
+            MessageHandler(
+                filters.Document.ALL,
+                on_document
+            )
+        )
+
+        application.add_handler(
+            MessageHandler(
+                filters.TEXT & ~filters.COMMAND,
+                on_text
+            )
+        )
+
+        application.add_handler(
+            CallbackQueryHandler(on_callback)
+        )
+
+        async def error_handler(update, context):
+            import traceback
+
+            print("\n====== TELEGRAM ERROR ======")
+            print("UPDATE:")
+            print(update)
+
+            print("\nERROR:")
+            print(repr(context.error))
+
+            traceback.print_exception(
+                type(context.error),
+                context.error,
+                context.error.__traceback__
+            )
+
+            print("====== END ERROR ======\n")
+
+        application.add_error_handler(error_handler)
+        
 
     _register_handlers(app)
 
