@@ -1942,23 +1942,25 @@ async def cmd_start(update,context):
             "</code>"
         )
 
-    kb=InlineKeyboardMarkup([
+    buttons = [
         [
             InlineKeyboardButton(
                 "📂 Check Accounts",
                 callback_data="start_check"
             )
         ]
-    ])
+    ]
 
-    if is_admin(tg.id,cfg):
+    if is_admin(tg.id, cfg):
 
-        kb.inline_keyboard.append([
+        buttons.append([
             InlineKeyboardButton(
                 "⚙️ Admin Panel",
                 callback_data="open_admin_panel"
             )
         ])
+
+    kb = InlineKeyboardMarkup(buttons)
 
     m=await update.message.reply_text(
 
