@@ -567,19 +567,65 @@ def track(uid: str, mid: int):
 # ════════════════════════════════════════════
 #  USER HELPERS
 # ════════════════════════════════════════════
-def get_or_create_user(uid,username="",first_name=""):
+def get_or_create_user(uid, username="", first_name=""):
     users = load_users()
+
     if uid not in users:
-        users[uid] = {"username":username,"first_name":first_name,"banned":False,
-                      "vip":False,"activated":False,"total_checked":0,"sessions_count":0,
-                      "sessions_since_cd":0,"last_cd_at":None,"key_used":None,
-                      "key_expires_at":None,"joined":datetime.now().isoformat(),
-                      "last_seen":datetime.now().isoformat()}
+
+        users[uid] = {
+            "username": username,
+            "first_name": first_name,
+
+            "banned": False,
+            "vip": False,
+            "activated": False,
+
+            # existing stats
+            "total_checked": 0,
+            "sessions_count": 0,
+            "sessions_since_cd": 0,
+            "last_cd_at": None,
+
+            # key system
+            "key_used": None,
+            "key_expires_at": None,
+
+            # timestamps
+            "joined": datetime.now().isoformat(),
+            "last_seen": datetime.now().isoformat()
+        }
+
     else:
-        if username:   users[uid]["username"]   = username
-        if first_name: users[uid]["first_name"] = first_name
-        users[uid]["last_seen"] = datetime.now().isoformat()
+
+        user = users[uid]
+
+        if username:
+            user["username"] = username
+
+        if first_name:
+            user["first_name"] = first_name
+
+        user["last_seen"] = datetime.now().isoformat()
+
+        # add defaults for older accounts
+        user.setdefault("referrals", 0)
+        user.setdefault("referred_by", None)
+        user.setdefault("ref_rewarded", False)
+
+        user.setdefault("banned", False)
+        user.setdefault("vip", False)
+        user.setdefault("activated", False)
+
+        user.setdefault("total_checked", 0)
+        user.setdefault("sessions_count", 0)
+        user.setdefault("sessions_since_cd", 0)
+
+        user.setdefault("last_cd_at", None)
+        user.setdefault("key_used", None)
+        user.setdefault("key_expires_at", None)
+
     save_users(users)
+
     return users[uid], users
 
 def is_admin(uid: int, cfg: dict) -> bool:
@@ -656,34 +702,13 @@ def del_result_folder(rf, base_dir=None):
 # ════════════════════════════════════════════
 #  CHANNEL GATE
 # ════════════════════════════════════════════
-async def in_channel(bot, uid, ch) -> bool:
-
+async def in_channel(bot,uid,ch) -> bool:
     try:
-
-        member = await bot.get_chat_member(
-            chat_id=f"@{ch}",
-            user_id=int(uid)
-        )
-
-        status = str(member.status).lower()
-
-        return status not in (
-            "left",
-            "kicked",
-            "banned"
-        )
-
-    except Exception as e:
-
-        print(
-            f"[CHANNEL CHECK ERROR] "
-            f"{uid} -> @{ch}: {e}"
-        )
-
-        return False
+        m = await bot.get_chat_member(f"@{ch}",uid)
+        return m.status in (ChatMember.MEMBER,ChatMember.ADMINISTRATOR,ChatMember.OWNER)
+    except: return False
 
 async def join_prompt(target, ch):
-
     kb = InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
@@ -706,84 +731,27 @@ async def join_prompt(target, ch):
     )
 
     try:
-
         if hasattr(target, "edit_message_text"):
-
             await target.edit_message_text(
                 txt,
                 reply_markup=kb,
                 parse_mode=ParseMode.HTML
             )
-
         else:
-
             await target.reply_text(
                 txt,
                 reply_markup=kb,
                 parse_mode=ParseMode.HTML
             )
-
     except:
-
         try:
-
             await target.reply_text(
                 txt,
                 reply_markup=kb,
                 parse_mode=ParseMode.HTML
             )
-
         except:
             pass
-            
-async def verify_join(update, context):
-
-    q = update.callback_query
-
-    cfg = load_config()
-
-    channel = (
-        cfg.get(
-            "channel_username",
-            ""
-        )
-        .replace("@", "")
-        .strip()
-    )
-
-    if not channel:
-        await q.answer(
-            "No channel configured.",
-            show_alert=True
-        )
-        return
-
-    joined = await in_channel(
-        context.bot,
-        q.from_user.id,
-        channel
-    )
-
-    if joined:
-
-        await q.answer(
-            "✅ Verified.",
-            show_alert=True
-        )
-
-        try:
-
-            await q.message.delete()
-
-        except:
-            pass
-
-        return
-
-    await q.answer(
-        "❌ Join channel first.",
-        show_alert=True
-    )
 
 async def gate(update, context):
     cfg = load_config()
@@ -797,7 +765,7 @@ async def gate(update, context):
         tg.first_name or ""
     )
 
-    # admin bypass only
+    # ONLY admin bypass
     if is_admin(tg.id, cfg):
         return True, cfg, u
 
@@ -828,7 +796,6 @@ async def gate(update, context):
 
 
 async def gate_cb(update, context):
-
     cfg = load_config()
 
     q = update.callback_query
@@ -840,7 +807,7 @@ async def gate_cb(update, context):
         q.from_user.first_name or ""
     )
 
-    # admin bypass only
+    # ONLY admin bypass
     if is_admin(q.from_user.id, cfg):
         return True, cfg, u
 
@@ -862,7 +829,7 @@ async def gate_cb(update, context):
 
             try:
                 await q.answer(
-                    "❌ Join channel first.",
+                    "❌ Join the channel first.",
                     show_alert=True
                 )
             except:
@@ -1812,55 +1779,127 @@ async def cmd_start(update,context):
         tg.first_name or ""
     )
 
-    if ud.get("banned") and not is_admin(tg.id,cfg):
+    # Process referral link
+    if context.args:
+
+        ref=context.args[0]
+
+        if ref.startswith("REF_"):
+
+            inviter=ref.replace("REF_","")
+
+            if inviter!=uid:
+
+                process_referral(
+                    inviter,
+                    uid
+                )
+
+                ud,_=get_or_create_user(
+                    uid,
+                    tg.username or "",
+                    tg.first_name or ""
+                )
+
+    if ud.get("banned") and not is_admin(
+        tg.id,
+        cfg
+    ):
+
         await update.message.reply_text(
             "🚫 <b>Access Suspended</b>\n\n"
             "Your account is restricted from using this bot.",
             parse_mode=ParseMode.HTML
         )
+
         return
 
     # FORCE CHANNEL CHECK
     force_channel=cfg.get(
-        "channel_username",
+        "force_channel",
         ""
-    ).replace("@","").strip()
+    )
 
     if (
         force_channel
-        and not is_admin(tg.id,cfg)
+        and not is_admin(
+            tg.id,
+            cfg
+        )
     ):
+
+        force_channel=(
+            force_channel
+            .replace("@","")
+            .strip()
+        )
+
+        joined=False
 
         try:
 
-            joined=await in_channel(
-                context.bot,
-                uid,
-                force_channel
+            member=await context.bot.get_chat_member(
+                chat_id=f"@{force_channel}",
+                user_id=int(uid)
             )
 
-            if not joined:
-
-                await join_prompt(
-                    update.effective_message,
-                    force_channel
-                )
-
-                return
+            joined=member.status in (
+                ChatMember.MEMBER,
+                ChatMember.ADMINISTRATOR,
+                ChatMember.OWNER
+            )
 
         except:
 
-            await join_prompt(
-                update.effective_message,
-                force_channel
+            joined=False
+
+        if not joined:
+
+            kb=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "📢 Join Channel",
+                        url=f"https://t.me/{force_channel}"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "✅ Verify",
+                        callback_data="verify_join"
+                    )
+                ]
+            ])
+
+            await update.message.reply_text(
+                "🔒 <b>Channel Verification Required</b>\n\n"
+                "Join the channel then press Verify.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb
             )
 
             return
 
-    if not ud.get("activated") and not is_admin(tg.id,cfg):
+    # Activation block
+    if not ud.get("activated") and not is_admin(
+        tg.id,
+        cfg
+    ):
+
+        me=await context.bot.get_me()
+
+        refs=ud.get(
+            "referrals",
+            0
+        )
+
+        ref_link=(
+            f"https://t.me/{me.username}"
+            f"?start=REF_{uid}"
+        )
 
         await update.message.reply_text(
             "🔑 <b>Activation Required</b>\n\n"
+
             "Use <code>/redeem YOUR_KEY</code> "
             "to activate your access.",
 
@@ -1869,47 +1908,73 @@ async def cmd_start(update,context):
 
         return
 
-    if not is_admin(tg.id,cfg) and check_key_expiry(uid):
+    if (
+        not is_admin(
+            tg.id,
+            cfg
+        )
+        and check_key_expiry(uid)
+    ):
 
         await update.message.reply_text(
             "⏰ <b>Subscription Expired</b>\n\n"
-            "Please contact an administrator "
-            "to renew your access.",
-
+            "Please contact an administrator to renew your access.",
             parse_mode=ParseMode.HTML
         )
 
         return
 
-    if cfg.get("locked") and \
-       not is_admin(tg.id,cfg) and \
-       not ud.get("vip"):
+    if (
+        cfg.get("locked")
+        and not is_admin(
+            tg.id,
+            cfg
+        )
+        and not ud.get("vip")
+    ):
 
         await update.message.reply_text(
             "🔒 <b>Maintenance Mode Enabled</b>\n\n"
             "The bot is temporarily unavailable.",
-
             parse_mode=ParseMode.HTML
         )
 
         return
 
-    vt=" 👑 <b>VIP</b>" \
-        if ud.get("vip") else ""
+    vt=(
+        " 👑 <b>VIP</b>"
+        if ud.get("vip")
+        else ""
+    )
 
-    at=" ⚙️ <b>ADMIN</b>" \
-        if is_admin(tg.id,cfg) else ""
+    at=(
+        " ⚙️ <b>ADMIN</b>"
+        if is_admin(
+            tg.id,
+            cfg
+        )
+        else ""
+    )
 
-    iv=ud.get("vip") \
-        or is_admin(tg.id,cfg)
+    iv=(
+        ud.get("vip")
+        or is_admin(
+            tg.id,
+            cfg
+        )
+    )
 
-    lim=cfg.get("vip_limit") \
-        if iv else cfg.get("global_limit")
+    lim=(
+        cfg.get("vip_limit")
+        if iv
+        else cfg.get("global_limit")
+    )
 
     ls=(
         f"\n• Line Limit: "
         f"<code>{lim:,}</code>"
-        if lim else ""
+        if lim
+        else ""
     )
 
     cd_on,cd_left=check_cooldown(
@@ -1933,41 +1998,57 @@ async def cmd_start(update,context):
             "</code>"
         )
 
-    exp_s="" \
-        if is_admin(tg.id,cfg) \
+    exp_s=(
+        ""
+        if is_admin(
+            tg.id,
+            cfg
+        )
         else (
             "\n• Key Expires: "
             f"<code>"
             f"{fmt_expiry(ud.get('key_expires_at'))}"
             "</code>"
         )
+    )
 
-    buttons = [
-        [
-            InlineKeyboardButton(
-                "📂 Check Accounts",
-                callback_data="start_check"
-            )
-        ]
-    ]
+    if is_admin(
+        tg.id,
+        cfg
+    ):
 
-    if is_admin(tg.id, cfg):
-
-        buttons.append([
-            InlineKeyboardButton(
-                "⚙️ Admin Panel",
-                callback_data="open_admin_panel"
-            )
+        kb=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    "📂 Check Accounts",
+                    callback_data="start_check"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "⚙️ Admin Panel",
+                    callback_data="open_admin_panel"
+                )
+            ]
         ])
 
-    kb = InlineKeyboardMarkup(buttons)
+    else:
+
+        kb=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    "📂 Check Accounts",
+                    callback_data="start_check"
+                )
+            ]
+        ])
 
     m=await update.message.reply_text(
 
         f"⚡ <b>Garena CODM Checker"
         f"{vt}{at}</b>\n\n"
 
-        f"<b>Account Information</b>\n"
+        "<b>Account Information</b>\n"
 
         f"• User: "
         f"<b>{tg.first_name}</b>\n"
@@ -1991,7 +2072,82 @@ async def cmd_start(update,context):
     )
 
     if m:
-        track(uid,m.message_id)
+
+        track(
+            uid,
+            m.message_id
+        )
+        
+async def verify_join(update,context):
+
+    q=update.callback_query
+
+    await q.answer()
+
+    cfg=load_config()
+
+    uid=str(q.from_user.id)
+
+    force_channel=cfg.get(
+        "force_channel",
+        ""
+    )
+
+    if not force_channel:
+        return
+
+    force_channel=(
+        force_channel
+        .replace("@","")
+        .strip()
+    )
+
+    joined=False
+
+    try:
+
+        member=await context.bot.get_chat_member(
+            chat_id=f"@{force_channel}",
+            user_id=q.from_user.id
+        )
+
+        joined=member.status in (
+            ChatMember.MEMBER,
+            ChatMember.ADMINISTRATOR,
+            ChatMember.OWNER
+        )
+
+    except:
+        joined=False
+
+    if not joined:
+
+        await q.answer(
+            "❌ Join the channel first.",
+            show_alert=True
+        )
+
+        return
+
+    try:
+        await q.message.delete()
+    except:
+        pass
+
+    fake=type(
+        "obj",
+        (),
+        {}
+    )()
+
+    fake.effective_user=q.from_user
+    fake.message=q.message
+    fake.effective_message=q.message
+
+    await cmd_start(
+        fake,
+        context
+    )
 
 async def cmd_redeem(update,context):
     cfg=load_config(); tg=update.effective_user; uid=str(tg.id)
@@ -3365,7 +3521,7 @@ async def on_callback(update,context):
         return
 
     # all others need gate
-    allowed,ud,users=await gate_cb(query,context)
+    allowed, cfg, u = await gate_cb(update, context)
     if not allowed: return
 
     if data=="start_check":
@@ -6292,8 +6448,8 @@ def main():
     def _register_handlers(application):
         # ── User ──────────────────────────────────────────────────────────
         application.add_handler(CommandHandler("start",           cmd_start))
-        application.add_handler(CallbackQueryHandler(verify_join, pattern="^verify_join$"))
         application.add_handler(CommandHandler("redeem",          cmd_redeem))
+        application.add_handler(CallbackQueryHandler(verify_join, pattern="^verify_join$"))
         application.add_handler(CommandHandler("stop",            cmd_stop))
         application.add_handler(CommandHandler("cancel",          cmd_cancel))
         application.add_handler(CommandHandler("hitson",          cmd_hits_on))
@@ -6303,17 +6459,15 @@ def main():
         application.add_handler(CommandHandler("check",           cmd_check))
         application.add_handler(CommandHandler("myresultsfile",   cmd_myresultsfile))
         application.add_handler(CommandHandler("clean",           cmd_clean))
-
-        # ── Reseller ─────────────────────────────────────────────────────
+        # ── Reseller (resellers only) ──────────────────────────────────────
         application.add_handler(CommandHandler("rgenkey",         cmd_reseller_gen_key))
-
-        # ── Admin ───────────────────────────────────────────────────────
+        # ── Admin ──────────────────────────────────────────────────────────
         application.add_handler(CommandHandler("generate_key",    cmd_generate_key))
         application.add_handler(CommandHandler("remove_key",      cmd_remove_key))
         application.add_handler(CommandHandler("ban_user",        cmd_ban_user))
         application.add_handler(CommandHandler("unban_user",      cmd_unban_user))
-        application.add_handler(CommandHandler(["lockAll","lockall"],     cmd_lock_all))
-        application.add_handler(CommandHandler(["unlockAll","unlockall"], cmd_unlock_all))
+        application.add_handler(CommandHandler(["lockAll","lockall"],    cmd_lock_all))
+        application.add_handler(CommandHandler(["unlockAll","unlockall"],cmd_unlock_all))
         application.add_handler(CommandHandler("stopall",         cmd_stop_all_checking))
         application.add_handler(CommandHandler("continueall",     cmd_continue_all_checking))
         application.add_handler(CommandHandler("stopforvip",      cmd_stop_for_vip))
@@ -6347,52 +6501,15 @@ def main():
         application.add_handler(CommandHandler("senddata",        cmd_send_data))
         application.add_handler(CommandHandler("replacefile",     cmd_replace_file))
         application.add_handler(CommandHandler("cancel_replace",  cmd_cancel_replace))
-
-        # ── Reseller Panel ───────────────────────────────────────────────
-        application.add_handler(CommandHandler("miniadminpanel",  cmd_mini_admin_panel))
-        application.add_handler(CommandHandler("removeminiadmin", cmd_remove_mini_admin))
-        application.add_handler(CommandHandler("miniadminlist",   cmd_mini_admin_list))
-        application.add_handler(CommandHandler("miniadmininfo",   cmd_mini_admin_info))
-
-        # ── Message / Callback ───────────────────────────────────────────
-        application.add_handler(
-            MessageHandler(
-                filters.Document.ALL,
-                on_document
-            )
-        )
-
-        application.add_handler(
-            MessageHandler(
-                filters.TEXT & ~filters.COMMAND,
-                on_text
-            )
-        )
-
-        application.add_handler(
-            CallbackQueryHandler(on_callback)
-        )
-
-        async def error_handler(update, context):
-            import traceback
-
-            print("\n====== TELEGRAM ERROR ======")
-            print("UPDATE:")
-            print(update)
-
-            print("\nERROR:")
-            print(repr(context.error))
-
-            traceback.print_exception(
-                type(context.error),
-                context.error,
-                context.error.__traceback__
-            )
-
-            print("====== END ERROR ======\n")
-
-        application.add_error_handler(error_handler)
-        
+        # ── Reseller Panel (admin manages resellers) ───────────────────────
+        application.add_handler(CommandHandler("miniadminpanel",      cmd_mini_admin_panel))
+        application.add_handler(CommandHandler("removeminiadmin",     cmd_remove_mini_admin))
+        application.add_handler(CommandHandler("miniadminlist",       cmd_mini_admin_list))
+        application.add_handler(CommandHandler("miniadmininfo",       cmd_mini_admin_info))
+        # ── Message / callback handlers ────────────────────────────────────
+        application.add_handler(MessageHandler(filters.Document.ALL,          on_document))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
+        application.add_handler(CallbackQueryHandler(on_callback))
 
     _register_handlers(app)
 
