@@ -257,6 +257,12 @@ def _test_proxy_sync(line: str, timeout: int = 10) -> tuple:
 
 
 # ════════════════════════════════════════════
+#  SESSION ROTATION (ANTI-BLOCK)
+# ════════════════════════════════════════════
+SESSION_ROTATE_EVERY = 1000   # global processed
+SESSION_ROTATE_SLEEP = 3     # seconds
+
+# ════════════════════════════════════════════
 #  CONFIG
 # ════════════════════════════════════════════
 DEFAULT_CONFIG = {
@@ -296,46 +302,6 @@ def load_users() -> dict:
 
 def save_users(u: dict):
     with open(USERS_FILE,"w",encoding="utf-8") as f: json.dump(u,f,indent=2)
-    
-def process_referral(inviter_uid, new_uid):
-    users = load_users()
-
-    inviter_uid = str(inviter_uid)
-    new_uid = str(new_uid)
-
-    if inviter_uid == new_uid:
-        return False
-
-    if new_uid not in users:
-        return False
-
-    invited = users[new_uid]
-
-    # already referred
-    if invited.get("referred_by"):
-        return False
-
-    invited["referred_by"] = inviter_uid
-
-    inviter = users.get(inviter_uid)
-    if not inviter:
-        save_users(users)
-        return False
-
-    inviter["referrals"] = inviter.get("referrals", 0) + 1
-
-    # reward at 1 invite
-    if (
-        inviter["referrals"] >= 1
-        and not inviter.get("ref_rewarded")
-    ):
-        inviter["activated"] = True
-        inviter["key_expires_at"] = None
-        inviter["key_used"] = "REFERRAL"
-        inviter["ref_rewarded"] = True
-
-    save_users(users)
-    return True
 
 def load_keys() -> dict:
     if KEYS_FILE.exists():
@@ -620,11 +586,6 @@ def get_or_create_user(uid, username="", first_name=""):
             "vip": False,
             "activated": False,
 
-            # referral system
-            "referrals": 0,
-            "referred_by": None,
-            "ref_rewarded": False,
-
             # existing stats
             "total_checked": 0,
             "sessions_count": 0,
@@ -810,12 +771,18 @@ async def gate(update, context):
         tg.first_name or ""
     )
 
-    force_channel = cfg.get(
-        "force_channel",
-        ""
-    ).replace("@", "").strip()
+    # ONLY admin bypass
+    if is_admin(tg.id, cfg):
+        return True, cfg, u
+
+    force_channel = (
+        cfg.get("channel_username", "")
+        .replace("@", "")
+        .strip()
+    )
 
     if force_channel:
+
         joined = await in_channel(
             context.bot,
             uid,
@@ -823,10 +790,12 @@ async def gate(update, context):
         )
 
         if not joined:
+
             await join_prompt(
                 update.effective_message,
                 force_channel
             )
+
             return False, None, u
 
     return True, cfg, u
@@ -844,12 +813,18 @@ async def gate_cb(update, context):
         q.from_user.first_name or ""
     )
 
-    force_channel = cfg.get(
-        "force_channel",
-        ""
-    ).replace("@", "").strip()
+    # ONLY admin bypass
+    if is_admin(q.from_user.id, cfg):
+        return True, cfg, u
+
+    force_channel = (
+        cfg.get("channel_username", "")
+        .replace("@", "")
+        .strip()
+    )
 
     if force_channel:
+
         joined = await in_channel(
             context.bot,
             uid,
@@ -857,10 +832,14 @@ async def gate_cb(update, context):
         )
 
         if not joined:
-            await q.answer(
-                "❌ Join channel first.",
-                show_alert=True
-            )
+
+            try:
+                await q.answer(
+                    "❌ Join the channel first.",
+                    show_alert=True
+                )
+            except:
+                pass
 
             await join_prompt(
                 q.message,
@@ -1561,6 +1540,10 @@ def run_checker(uid,combo_file,result_folder,limit,threads,stop_event,
             _idx   = 0
             _active_futs: dict = {}
 
+            # ── Session Rotation ───────────────────────
+            _rotation_target = SESSION_ROTATE_EVERY
+            _rotating = False
+
             while _idx < len(_items) or _active_futs:
                 if stop_event.is_set():
                     for f in list(_active_futs): f.cancel()
@@ -1582,10 +1565,103 @@ def run_checker(uid,combo_file,result_folder,limit,threads,stop_event,
                     list(_active_futs), return_when=_cf.FIRST_COMPLETED)
                 for f in done_futs:
                     _active_futs.pop(f, None)
-                    try: f.result()
-                    except: pass
-                # Hint GC to reclaim StringIO/session objects from completed futures
-                import gc as _gc; _gc.collect()
+
+                    try:
+                        f.result()
+                    except:
+                        pass
+
+                # ─────────────────────────────────────────────
+                # GLOBAL SESSION ROTATION EVERY 1000 PROCESSED
+                # ─────────────────────────────────────────────
+                try:
+                    current_processed = done[0]
+                except:
+                    current_processed = 0
+
+                if (
+                    not _rotating
+                    and current_processed >= _rotation_target
+                ):
+                    _rotating = True
+
+                    log.info(
+                        f"[{uid}] 🔄 Session rotation "
+                        f"({current_processed:,} processed)"
+                    )
+
+                    # 1. Flush checkpoint immediately
+                    with _ckpt_lock:
+                        _flush_checkpoint()
+
+                    # 2. Wait for running workers to finish
+                    for fut in list(_active_futs):
+                        try:
+                            fut.result(timeout=20)
+                        except:
+                            pass
+
+                    _active_futs.clear()
+
+                    # 3. Destroy sessions / cookies / datadome
+                    try:
+                        import gc as _gc
+
+                        if hasattr(_dty_module, "_thread_local"):
+                            try:
+                                _dty_module._thread_local.__dict__.clear()
+                            except:
+                                pass
+
+                        # Clear CookieManager cache
+                        try:
+                            CookieManager._instance = None
+                        except:
+                            pass
+
+                        # Clear DataDome manager
+                        try:
+                            DataDomeManager._instance = None
+                        except:
+                            pass
+
+                        _gc.collect()
+
+                    except Exception as rot_err:
+                        log.warning(
+                            f"[{uid}] Rotation cleanup error: "
+                            f"{rot_err}"
+                        )
+
+                    # 4. Sleep (simulate Ctrl+C pause)
+                    log.info(
+                        f"[{uid}] ⏳ Sleeping "
+                        f"{SESSION_ROTATE_SLEEP}s..."
+                    )
+
+                    time.sleep(SESSION_ROTATE_SLEEP)
+
+                    # 5. Fresh executor = fresh sessions
+                    try:
+                        ex.shutdown(wait=False)
+                    except:
+                        pass
+
+                    ex = ThreadPoolExecutor(
+                        max_workers=MAX_WORKER_THREADS
+                    )
+
+                    _rotation_target += SESSION_ROTATE_EVERY
+                    _rotating = False
+
+                    log.info(
+                        f"[{uid}] ✅ New session started "
+                        f"(resume at {current_processed:,})"
+                    )
+
+                # Hint GC to reclaim StringIO/session objects
+                import gc as _gc
+                _gc.collect()
 
             else:
                 ex.shutdown(wait=False)
@@ -1928,16 +2004,7 @@ async def cmd_start(update,context):
             "🔑 <b>Activation Required</b>\n\n"
 
             "Use <code>/redeem YOUR_KEY</code> "
-            "to activate your access.\n\n"
-
-            f"👥 Referrals: "
-            f"<b>{refs}/1</b>\n"
-
-            "🏆 Invite 1 Friend "
-            "= Lifetime Access\n\n"
-
-            "Share your link:\n"
-            f"<code>{ref_link}</code>",
+            "to activate your access.",
 
             parse_mode=ParseMode.HTML
         )
@@ -2250,31 +2317,6 @@ async def _do_stop(update,context):
             if uid in active_sessions: del active_sessions[uid]
         await update.message.reply_text("🗑 Session cancelled and file deleted.")
     else: await update.message.reply_text("ℹ️ No active checking session.")
-
-async def cmd_referral(update, context):
-
-    uid = str(update.effective_user.id)
-
-    users = load_users()
-
-    user = users.get(uid, {})
-
-    me = await context.bot.get_me()
-
-    link = (
-        f"https://t.me/{me.username}"
-        f"?start=REF_{uid}"
-    )
-
-    refs = user.get("referrals", 0)
-
-    await update.message.reply_text(
-        f"🎁 Referral System\n\n"
-        f"👥 Invites: {refs}/1\n"
-        f"🏆 Reward: Lifetime Access\n\n"
-        f"Invite 1 person:\n"
-        f"{link}"
-    )
 
 async def cmd_stop(u,c): await _do_stop(u,c)
 async def cmd_cancel(u,c): await _do_stop(u,c)
@@ -6510,7 +6552,6 @@ def main():
         # ── User ──────────────────────────────────────────────────────────
         application.add_handler(CommandHandler("start",           cmd_start))
         application.add_handler(CommandHandler("redeem",          cmd_redeem))
-        application.add_handler(CommandHandler("referral", cmd_referral))
         application.add_handler(CallbackQueryHandler(verify_join, pattern="^verify_join$"))
         application.add_handler(CommandHandler("stop",            cmd_stop))
         application.add_handler(CommandHandler("cancel",          cmd_cancel))
