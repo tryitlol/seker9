@@ -3775,61 +3775,96 @@ async def on_callback(update,context):
                 with sessions_lock: s2=active_sessions.get(uid,{})
                 is_continuing=s2.get("stop_continue",False)
                 if is_continuing:
-                    # Send partial results but keep combo file alive
-                    asyncio.run_coroutine_threadsafe(
-                        deliver_results(context.bot,cid,uid,zp,st,combo_file=None,partial=True),loop)
-                    # Reset stop event and re-launch checker for remaining lines
-                    new_stop=threading.Event()
+                    # Auto-recycle only.
+                    # Save progress and relaunch checker without sending results.
+
+                    new_stop = threading.Event()
+
                     with sessions_lock:
                         if uid in active_sessions:
-                            active_sessions[uid]["stop_event"]=new_stop
-                            active_sessions[uid]["stop_continue"]=False
-                            active_sessions[uid]["status"]="checking"
+                            active_sessions[uid]["stop_event"] = new_stop
+                            active_sessions[uid]["stop_continue"] = False
+                            active_sessions[uid]["status"] = "checking"
+
                     _checker_semaphore.release()
                     _status_stop.set()
+
                     # Launch new bg thread for remaining lines
-                    new_ts=datetime.now().strftime("%Y%m%d_%H%M%S")
-                    new_rf=RESULTS_DIR/uid/new_ts; new_rf.mkdir(parents=True,exist_ok=True)
-                    with sessions_lock:
-                        if uid in active_sessions:
-                            active_sessions[uid]["result_folder"]=str(new_rf)
+                    new_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+                    # KEEP SAME RESULT FOLDER
+                    new_rf = rf
+
                     def _continue_bg():
                         _enqueue(uid)
-                        _checker_semaphore.acquire(); _dequeue(uid)
+                        _checker_semaphore.acquire()
+                        _dequeue(uid)
+
                         try:
-                            st2=run_checker(uid,combo,new_rf,lim,threads,new_stop,btok,cid,thr,clf,is_resume=True)
-                            u3=load_users()
+                            st2 = run_checker(
+                                uid,
+                                combo,
+                                new_rf,
+                                lim,
+                                threads,
+                                new_stop,
+                                btok,
+                                cid,
+                                thr,
+                                clf,
+                                is_resume=True
+                            )
+
+                            u3 = load_users()
+
                             if uid in u3:
-                                u3[uid]["total_checked"]+=st2.get("total",0)
+                                u3[uid]["total_checked"] += st2.get("total", 0)
                                 save_users(u3)
-                            zo2=new_rf/f"results_{uid}_{new_ts}.zip"; zp2=zip_results(new_rf,zo2)
-                            note2=" (Stopped)" if new_stop.is_set() else ""
-                            asyncio.run_coroutine_threadsafe(
-                                deliver_results(context.bot,cid,uid,zp2,st2,combo_file=combo,note=note2),loop)
+
+                            # ONLY SEND RESULTS WHEN ACTUALLY FINISHED
+                            if not new_stop.is_set():
+                                zo2 = new_rf / f"results_{uid}_{new_ts}.zip"
+                                zp2 = zip_results(new_rf, zo2)
+
+                                asyncio.run_coroutine_threadsafe(
+                                    deliver_results(
+                                        context.bot,
+                                        cid,
+                                        uid,
+                                        zp2,
+                                        st2,
+                                        combo_file=combo
+                                    ),
+                                    loop
+                                )
+
                         except Exception as ex2:
-                            asyncio.run_coroutine_threadsafe(context.bot.send_message(
-                                chat_id=cid,text=f"❌ <b>Error:</b> <code>{str(ex2)[:300]}</code>",
-                                parse_mode=ParseMode.HTML),loop)
+                            asyncio.run_coroutine_threadsafe(
+                                context.bot.send_message(
+                                    chat_id=cid,
+                                    text=f"❌ <b>Error:</b> <code>{str(ex2)[:300]}</code>",
+                                    parse_mode=ParseMode.HTML
+                                ),
+                                loop
+                            )
+
                         finally:
-                            _checker_semaphore.release(); inc_session(uid); del_combo(combo)
+                            _checker_semaphore.release()
+                            inc_session(uid)
+                            del_combo(combo)
                             clear_persisted_session(uid)
+
                             with sessions_lock:
                                 if uid in active_sessions:
-                                    active_sessions[uid]["status"]="done"
-                                    try:
-                                        _ls=active_sessions[uid].get("live_stats")
-                                        _ps=active_sessions[uid].get("prev_stats",{})
-                                        _pp=active_sessions[uid].get("prev_processed",0)
-                                        _cs=_ls.get_stats() if _ls else {}
-                                        _fs=dict(_cs)
-                                        if _ps:
-                                            for _k in ("valid","invalid","clean","not_clean","has_codm","no_codm"):
-                                                _fs[_k]=_cs.get(_k,0)+_ps.get(_k,0)
-                                        _fs["total"]=_pp+_cs.get("total",0)
-                                        active_sessions[uid]["final_stats"]=_fs
-                                    except: pass
-                    threading.Thread(target=_continue_bg,daemon=True,name=f"checker-cont-{uid}").start()
-                    return  # exit current bg, _continue_bg takes over
+                                    active_sessions[uid]["status"] = "done"
+
+                    threading.Thread(
+                        target=_continue_bg,
+                        daemon=True,
+                        name=f"checker-{uid}-resume"
+                    ).start()
+
+                    return
                 else:
                     note=" (Stopped)" if stop_ev.is_set() else ""
                     asyncio.run_coroutine_threadsafe(
