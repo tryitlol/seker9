@@ -259,7 +259,7 @@ def _test_proxy_sync(line: str, timeout: int = 10) -> tuple:
 # ════════════════════════════════════════════
 #  SESSION ROTATION (ANTI-BLOCK)
 # ════════════════════════════════════════════
-SESSION_ROTATE_EVERY = 1000   # global processed
+SESSION_ROTATE_EVERY = 300   # global processed
 SESSION_ROTATE_SLEEP = 3     # seconds
 
 # ════════════════════════════════════════════
@@ -1568,16 +1568,18 @@ def run_checker(uid,combo_file,result_folder,limit,threads,stop_event,
 
                     try:
                         f.result()
-                    except:
+                    except Exception:
                         pass
 
+
                 # ─────────────────────────────────────────────
-                # GLOBAL SESSION ROTATION EVERY 1000 PROCESSED
+                # SAFE GLOBAL SESSION ROTATION
                 # ─────────────────────────────────────────────
                 try:
                     current_processed = done[0]
-                except:
+                except Exception:
                     current_processed = 0
+
 
                 if (
                     not _rotating
@@ -1590,42 +1592,55 @@ def run_checker(uid,combo_file,result_folder,limit,threads,stop_event,
                         f"({current_processed:,} processed)"
                     )
 
-                    # 1. Flush checkpoint immediately
-                    with _ckpt_lock:
-                        _flush_checkpoint()
-
-                    # 2. Wait for running workers to finish
-                    # Fast stop old workers
+                    # 1. Save checkpoint immediately
                     try:
-                        ex.shutdown(wait=False, cancel_futures=True)
-                    except:
+                        with _ckpt_lock:
+                            _flush_checkpoint()
+                    except Exception as e:
+                        log.warning(
+                            f"[{uid}] Checkpoint save error: {e}"
+                        )
+
+                    # Soft rotation only
+                    log.info(
+                        f"[{uid}] ♻️ Refreshing sessions..."
+                    )
+
+                    try:
+                        # Clear thread-local sessions
+                        if hasattr(_dty_module, "_thread_local"):
+                            _dty_module._thread_local.__dict__.clear()
+                    except Exception:
                         pass
 
-                    _active_futs.clear()
+                    # Small pause to mimic restart
+                    time.sleep(SESSION_ROTATE_SLEEP)
 
-                    # 3. Destroy sessions / cookies / datadome
+                    # 3. Clear thread sessions / cookies
                     try:
                         import gc as _gc
 
+                        # thread-local sessions
                         if hasattr(_dty_module, "_thread_local"):
                             try:
                                 _dty_module._thread_local.__dict__.clear()
-                            except:
+                            except Exception:
                                 pass
 
-                        # Clear CookieManager cache
+                        # Cookie manager
                         try:
                             CookieManager._instance = None
-                        except:
+                        except Exception:
                             pass
 
-                        # Clear DataDome manager
+                        # DataDome manager
                         try:
                             DataDomeManager._instance = None
-                        except:
+                        except Exception:
                             pass
 
-                        _gc.collect()
+                        # lighter garbage collection
+                        _gc.collect(0)
 
                     except Exception as rot_err:
                         log.warning(
@@ -1633,23 +1648,13 @@ def run_checker(uid,combo_file,result_folder,limit,threads,stop_event,
                             f"{rot_err}"
                         )
 
-                    # 4. Sleep (simulate Ctrl+C pause)
+                    # 4. Pause 10 seconds
                     log.info(
                         f"[{uid}] ⏳ Sleeping "
                         f"{SESSION_ROTATE_SLEEP}s..."
                     )
 
                     time.sleep(SESSION_ROTATE_SLEEP)
-
-                    # 5. Fresh executor = fresh sessions
-                    try:
-                        ex.shutdown(wait=False)
-                    except:
-                        pass
-
-                    ex = ThreadPoolExecutor(
-                        max_workers=MAX_WORKER_THREADS
-                    )
 
                     _rotation_target += SESSION_ROTATE_EVERY
                     _rotating = False
@@ -1659,7 +1664,8 @@ def run_checker(uid,combo_file,result_folder,limit,threads,stop_event,
                         f"(resume at {current_processed:,})"
                     )
 
-                # lighter GC (don't spam full collect)
+
+                # Light GC only sometimes (prevents slowdown)
                 if done[0] % 300 == 0:
                     import gc as _gc
                     _gc.collect(0)
