@@ -257,12 +257,6 @@ def _test_proxy_sync(line: str, timeout: int = 10) -> tuple:
 
 
 # ════════════════════════════════════════════
-#  SESSION ROTATION (ANTI-BLOCK)
-# ════════════════════════════════════════════
-SESSION_ROTATE_EVERY = 300   # global processed
-SESSION_ROTATE_SLEEP = 3     # seconds
-
-# ════════════════════════════════════════════
 #  CONFIG
 # ════════════════════════════════════════════
 DEFAULT_CONFIG = {
@@ -1288,47 +1282,18 @@ def run_checker(uid,combo_file,result_folder,limit,threads,stop_event,
 
     def gsess():
         count = getattr(tl, 'call_count', 0)
-
-        # 🔥 GLOBAL COUNT CHECK (THIS REPLACES YOUR 300 LOGIC)
-        global_total = ls.get_stats().get("total", 0)
-
-        if global_total > 0 and global_total % 300 == 0:
-            logger.warning(f"[SESSION] 🔄 GLOBAL reset at {global_total}")
-
-            try:
-                if hasattr(tl, "session"):
-                    tl.session.close()
-            except:
-                pass
-
-            time.sleep(3)
-
-            dm = DataDomeManager()
-            tl.session = create_thread_session(cm, dm)
-            tl.dm = dm
-            tl.call_count = 0
-
-            return tl.session, tl.dm
-
-        # ── EXISTING LOGIC ─────────────────────────
         if not hasattr(tl,"session") or count >= _SESSION_RECYCLE:
+            # Close existing session to free socket/SSL resources
             if hasattr(tl,"session"):
                 try: tl.session.close()
                 except: pass
-
-            with il:
-                time.sleep(0.3)
-
-            dm = DataDomeManager()
-            tl.session = create_thread_session(cm, dm)
-            tl.dm = dm
+            with il: time.sleep(0.3)
+            dm=DataDomeManager(); tl.session=create_thread_session(cm,dm); tl.dm=dm
             tl.call_count = 0
         else:
             tl.call_count = count + 1
-
         tl.session.proxies.update(geo_rotator.get_proxies())
-
-        return tl.session, tl.dm
+        return tl.session,tl.dm
 
     # Per-account: parse flexible format then call processaccount
     def _parse_line(line):
@@ -1537,9 +1502,28 @@ def run_checker(uid,combo_file,result_folder,limit,threads,stop_event,
                             _proxy_errors[_pf] = _proxy_errors.get(_pf,0)+1
 
             with fl:
-                done[0]+=1
-            # Mark this index as done in the checkpoint (safe against crash-resume duplicates)
+                done[0] += 1
+
+            # Mark this index as done in the checkpoint
             _mark_done(i)
+
+            # Auto restart every 300 processed lines
+            if done[0] % 300 == 0:
+                with _ckpt_lock:
+                    _flush_checkpoint()
+
+                try:
+                    from __main__ import active_sessions, sessions_lock
+
+                    with sessions_lock:
+                        if uid in active_sessions:
+                            active_sessions[uid]["stop_continue"] = True
+                except:
+                    pass
+
+                log.info(f"[{uid}] Auto-recycle at {done[0]} lines")
+
+                stop_event.set()
         except Exception as _proc_err:
             with _fail_lock:
                 _fail_count[0] += 1
@@ -1569,13 +1553,14 @@ def run_checker(uid,combo_file,result_folder,limit,threads,stop_event,
             _idx   = 0
             _active_futs: dict = {}
 
-            # ── Session Rotation ───────────────────────
-            _rotation_target = SESSION_ROTATE_EVERY
-            _rotating = False
-
             while _idx < len(_items) or _active_futs:
                 if stop_event.is_set():
-                    for f in list(_active_futs): f.cancel()
+                    with _ckpt_lock:
+                        _flush_checkpoint()
+
+                    for f in list(_active_futs):
+                        f.cancel()
+
                     ex.shutdown(wait=False, cancel_futures=True)
                     break
 
@@ -1594,72 +1579,10 @@ def run_checker(uid,combo_file,result_folder,limit,threads,stop_event,
                     list(_active_futs), return_when=_cf.FIRST_COMPLETED)
                 for f in done_futs:
                     _active_futs.pop(f, None)
-
-                    try:
-                        f.result()
-                    except Exception:
-                        pass
-
-
-                # ─────────────────────────────────────────────
-                # FAST + SAFE SESSION COOLDOWN
-                # ─────────────────────────────────────────────
-                try:
-                    current_processed = done[0]
-                except Exception:
-                    current_processed = 0
-
-
-                if (
-                    not _rotating
-                    and current_processed >= _rotation_target
-                ):
-                    _rotating = True
-
-                    try:
-                        log.info(
-                            f"[{uid}] 🔄 Cooldown "
-                            f"({current_processed:,} processed)"
-                        )
-
-                        # Save checkpoint immediately
-                        try:
-                            with _ckpt_lock:
-                                _flush_checkpoint()
-                        except Exception as e:
-                            log.warning(
-                                f"[{uid}] checkpoint error: {e}"
-                            )
-
-                        # Pause only
-                        log.info(
-                            f"[{uid}] ⏳ Sleeping "
-                            f"{SESSION_ROTATE_SLEEP}s..."
-                        )
-
-                        time.sleep(SESSION_ROTATE_SLEEP)
-
-                        # Next trigger
-                        _rotation_target += SESSION_ROTATE_EVERY
-
-                        log.info(
-                            f"[{uid}] ✅ Resuming checker"
-                        )
-
-                    except Exception as rot_err:
-                        # Never kill checker
-                        log.exception(
-                            f"[{uid}] cooldown error: {rot_err}"
-                        )
-
-                    finally:
-                        _rotating = False
-
-
-                # Light GC only sometimes (prevents slowdown)
-                if done[0] % 300 == 0:
-                    import gc as _gc
-                    _gc.collect(0)
+                    try: f.result()
+                    except: pass
+                # Hint GC to reclaim StringIO/session objects from completed futures
+                import gc as _gc; _gc.collect()
 
             else:
                 ex.shutdown(wait=False)
