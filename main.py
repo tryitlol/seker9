@@ -1595,11 +1595,11 @@ def run_checker(uid,combo_file,result_folder,limit,threads,stop_event,
                         _flush_checkpoint()
 
                     # 2. Wait for running workers to finish
-                    for fut in list(_active_futs):
-                        try:
-                            fut.result(timeout=20)
-                        except:
-                            pass
+                    # Fast stop old workers
+                    try:
+                        ex.shutdown(wait=False, cancel_futures=True)
+                    except:
+                        pass
 
                     _active_futs.clear()
 
@@ -1659,9 +1659,10 @@ def run_checker(uid,combo_file,result_folder,limit,threads,stop_event,
                         f"(resume at {current_processed:,})"
                     )
 
-                # Hint GC to reclaim StringIO/session objects
-                import gc as _gc
-                _gc.collect()
+                # lighter GC (don't spam full collect)
+                if done[0] % 300 == 0:
+                    import gc as _gc
+                    _gc.collect(0)
 
             else:
                 ex.shutdown(wait=False)
