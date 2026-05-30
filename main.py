@@ -1573,7 +1573,7 @@ def run_checker(uid,combo_file,result_folder,limit,threads,stop_event,
 
 
                 # ─────────────────────────────────────────────
-                # SAFE GLOBAL SESSION ROTATION
+                # SAFE SESSION REFRESH (NO CRASH)
                 # ─────────────────────────────────────────────
                 try:
                     current_processed = done[0]
@@ -1587,82 +1587,54 @@ def run_checker(uid,combo_file,result_folder,limit,threads,stop_event,
                 ):
                     _rotating = True
 
-                    log.info(
-                        f"[{uid}] 🔄 Session rotation "
-                        f"({current_processed:,} processed)"
-                    )
-
-                    # 1. Save checkpoint immediately
                     try:
-                        with _ckpt_lock:
-                            _flush_checkpoint()
-                    except Exception as e:
-                        log.warning(
-                            f"[{uid}] Checkpoint save error: {e}"
+                        log.info(
+                            f"[{uid}] 🔄 Refreshing session "
+                            f"({current_processed:,} processed)"
                         )
 
-                    # Soft rotation only
-                    log.info(
-                        f"[{uid}] ♻️ Refreshing sessions..."
-                    )
+                        # Save checkpoint FIRST
+                        try:
+                            with _ckpt_lock:
+                                _flush_checkpoint()
+                        except Exception as e:
+                            log.warning(
+                                f"[{uid}] checkpoint flush error: {e}"
+                            )
 
-                    try:
-                        # Clear thread-local sessions
-                        if hasattr(_dty_module, "_thread_local"):
-                            _dty_module._thread_local.__dict__.clear()
-                    except Exception:
-                        pass
-
-                    # Small pause to mimic restart
-                    time.sleep(SESSION_ROTATE_SLEEP)
-
-                    # 3. Clear thread sessions / cookies
-                    try:
-                        import gc as _gc
-
-                        # thread-local sessions
-                        if hasattr(_dty_module, "_thread_local"):
-                            try:
+                        # Clear thread-local sessions ONLY
+                        # Forces fresh requests.Session() next request
+                        try:
+                            if hasattr(_dty_module, "_thread_local"):
                                 _dty_module._thread_local.__dict__.clear()
-                            except Exception:
-                                pass
+                        except Exception as e:
+                            log.warning(
+                                f"[{uid}] session clear error: {e}"
+                            )
 
-                        # Cookie manager
-                        try:
-                            CookieManager._instance = None
-                        except Exception:
-                            pass
+                        # Cooldown (mimic Ctrl+C restart)
+                        log.info(
+                            f"[{uid}] ⏳ Sleeping "
+                            f"{SESSION_ROTATE_SLEEP}s..."
+                        )
 
-                        # DataDome manager
-                        try:
-                            DataDomeManager._instance = None
-                        except Exception:
-                            pass
+                        time.sleep(SESSION_ROTATE_SLEEP)
 
-                        # lighter garbage collection
-                        _gc.collect(0)
+                        # Next trigger
+                        _rotation_target += SESSION_ROTATE_EVERY
+
+                        log.info(
+                            f"[{uid}] ✅ Session refreshed"
+                        )
 
                     except Exception as rot_err:
-                        log.warning(
-                            f"[{uid}] Rotation cleanup error: "
-                            f"{rot_err}"
+                        # NEVER crash checker
+                        log.exception(
+                            f"[{uid}] refresh failed: {rot_err}"
                         )
 
-                    # 4. Pause 10 seconds
-                    log.info(
-                        f"[{uid}] ⏳ Sleeping "
-                        f"{SESSION_ROTATE_SLEEP}s..."
-                    )
-
-                    time.sleep(SESSION_ROTATE_SLEEP)
-
-                    _rotation_target += SESSION_ROTATE_EVERY
-                    _rotating = False
-
-                    log.info(
-                        f"[{uid}] ✅ New session started "
-                        f"(resume at {current_processed:,})"
-                    )
+                    finally:
+                        _rotating = False
 
 
                 # Light GC only sometimes (prevents slowdown)
