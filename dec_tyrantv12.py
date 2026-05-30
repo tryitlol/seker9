@@ -1,4 +1,4 @@
-#Decode By Crazy | @P
+#Decode By Crazy | @PokiePy
 import os
 import sys
 import time
@@ -344,45 +344,80 @@ class DataDomeManager:
             logger.warning(f"[WARNING] Error setting datadome cookie: {e}")
             return False
 
-    def handle_403(self, session, telegram_config=None):
-        """On EVERY 403 — immediately force-rotate proxy, refresh DataDome, resume."""
+    def handle_403(self, session, cookie_manager=None):
+        """On EVERY 403 — FULL reset: new proxy + new session + new DataDome."""
         self._403_attempts += 1
 
         old_proxy = geo_rotator.current_proxy
 
-        logger.warning(f"[403] 🚫 Access denied — force-rotating proxy instantly... (attempt #{self._403_attempts})")
+        logger.warning(f"[403] 🚫 Block detected — rebuilding FULL session (attempt #{self._403_attempts})")
         logger.warning(f"[403] Old proxy: {old_proxy}")
 
-        # ── Force rotate proxy immediately ────────────────────
+        # ── STEP 1: Rotate proxy ──────────────────────────────
         new_proxy = geo_rotator.force_rotate()
-        session.proxies.update(geo_rotator.get_proxies())
-        logger.info(f"[403] ✅ Thread {threading.get_ident()} rotated → {new_proxy}")
 
-        # ── Fetch fresh DataDome on new proxy ─────────────────
-        time.sleep(1.0)  # give proxy time to stabilise before fetching datadome
-        new_datadome = get_datadome_cookie(session)
+        # ── STEP 2: DESTROY old session (CRITICAL) ────────────
+        try:
+            session.close()
+        except:
+            pass
+
+        # ── STEP 3: Create completely NEW session ─────────────
+        try:
+            new_session = create_thread_session(cookie_manager, self)
+        except:
+            logger.error("[403] ❌ Failed to create new session")
+            return False
+
+        logger.info(f"[403] 🔄 New session created on proxy: {new_proxy}")
+
+        # ── STEP 4: Ensure proxy applied ──────────────────────
+        new_session.proxies.update(geo_rotator.get_proxies())
+
+        # ── STEP 5: Fetch fresh DataDome ──────────────────────
+        time.sleep(1.0)
+
+        new_datadome = get_datadome_cookie(new_session)
+
         if new_datadome:
             self.set_datadome(new_datadome)
-            self.set_session_datadome(session, new_datadome)
+            self.set_session_datadome(new_session, new_datadome)
             self._403_attempts = 0
-            logger.info(f"[403] 🍪 Fresh DataDome obtained | New proxy: {new_proxy}")
 
-            return True
-        else:
-            logger.warning(f"[403] ⚠️ Could not get DataDome on new proxy — trying next proxy...")
-            # Try one more rotation if datadome fails
-            new_proxy = geo_rotator.force_rotate()
-            session.proxies.update(geo_rotator.get_proxies())
-            time.sleep(0.3)
-            new_datadome = get_datadome_cookie(session)
-            if new_datadome:
-                self.set_datadome(new_datadome)
-                self.set_session_datadome(session, new_datadome)
-                self._403_attempts = 0
-                logger.info(f"[403] ✅ DataDome obtained on fallback proxy: {new_proxy}")
-                return True
-            logger.error(f"[403] ❌ Failed to recover after 2 proxy rotations — skipping account")
-            return False
+            logger.info(f"[403] ✅ FULL recovery success (new session + proxy + datadome)")
+
+            # 🔥 IMPORTANT: RETURN NEW SESSION
+            return new_session
+
+        # ── STEP 6: Fallback retry ────────────────────────────
+        logger.warning(f"[403] ⚠️ First recovery failed — trying second proxy...")
+
+        geo_rotator.force_rotate()
+
+        try:
+            new_session.close()
+        except:
+            pass
+
+        new_session = create_thread_session(cookie_manager, self)
+        new_session.proxies.update(geo_rotator.get_proxies())
+
+        time.sleep(0.5)
+
+        new_datadome = get_datadome_cookie(new_session)
+
+        if new_datadome:
+            self.set_datadome(new_datadome)
+            self.set_session_datadome(new_session, new_datadome)
+            self._403_attempts = 0
+
+            logger.info(f"[403] ✅ Recovered on fallback session")
+
+            return new_session
+
+        logger.error(f"[403] ❌ FULL recovery failed after 2 attempts — skipping")
+
+        return False
 
 class LiveStats:
     def __init__(self):
@@ -2223,27 +2258,57 @@ def print_banner():
     print()
 
 def create_thread_session(cookie_manager, datadome_manager):
-    """Create a fresh cloudscraper session with proxy + cookies for a thread."""
-    sess = cloudscraper.create_scraper()
-    # Set proxy FIRST so datadome fetch also goes through this thread's proxy
-    sess.proxies.update(geo_rotator.get_proxies())
+    """Create a truly fresh session (new fingerprint + cookies + datadome)."""
+
+    # 🔥 Create scraper with defined browser profile (more stable fingerprint)
+    sess = cloudscraper.create_scraper(
+        browser={
+            "browser": "chrome",
+            "platform": "windows",
+            "mobile": False
+        }
+    )
+
+    # 🔥 HARD RESET anything inherited
+    sess.cookies.clear()
+
+    # 🔥 Slight fingerprint variation (helps reduce pattern detection)
+    sess.headers.update({
+        "Connection": "close",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+    })
+
+    # 🔥 APPLY PROXY FIRST (VERY IMPORTANT)
+    proxy = geo_rotator.get_proxies()
+    sess.proxies.update(proxy)
+
+    # ─────────────────────────────────────────────
+    # 🍪 COOKIE HANDLING (IMPROVED)
+    # ─────────────────────────────────────────────
     valid_cookies = cookie_manager.get_valid_cookies()
+
     if valid_cookies:
-        combined_cookie_str = "; ".join(valid_cookies)
-        applyck(sess, combined_cookie_str)
-        final_cookie_value = valid_cookies[-1]
-        datadome_value = (
-            final_cookie_value.split('=', 1)[1].strip()
-            if '=' in final_cookie_value and len(final_cookie_value.split('=', 1)) > 1
-            else None
-        )
-        if datadome_value:
+        # ⚠️ DO NOT reuse ALL cookies (this causes fingerprint linking)
+        # Instead: randomly pick ONE cookie to reduce pattern detection
+        import random
+        selected_cookie = random.choice(valid_cookies)
+
+        applyck(sess, selected_cookie)
+
+        if "=" in selected_cookie:
+            datadome_value = selected_cookie.split("=", 1)[1].strip()
             datadome_manager.set_datadome(datadome_value)
+            datadome_manager.set_session_datadome(sess, datadome_value)
+
     else:
-        # Proxy is already set on sess, so datadome fetch uses this thread's proxy
+        # 🔥 Always fetch fresh DataDome on new session
         datadome = get_datadome_cookie(sess)
+
         if datadome:
             datadome_manager.set_datadome(datadome)
+            datadome_manager.set_session_datadome(sess, datadome)
+
     return sess
 
 

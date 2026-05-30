@@ -1288,18 +1288,47 @@ def run_checker(uid,combo_file,result_folder,limit,threads,stop_event,
 
     def gsess():
         count = getattr(tl, 'call_count', 0)
+
+        # 🔥 GLOBAL COUNT CHECK (THIS REPLACES YOUR 300 LOGIC)
+        global_total = ls.get_stats().get("total", 0)
+
+        if global_total > 0 and global_total % 300 == 0:
+            logger.warning(f"[SESSION] 🔄 GLOBAL reset at {global_total}")
+
+            try:
+                if hasattr(tl, "session"):
+                    tl.session.close()
+            except:
+                pass
+
+            time.sleep(3)
+
+            dm = DataDomeManager()
+            tl.session = create_thread_session(cm, dm)
+            tl.dm = dm
+            tl.call_count = 0
+
+            return tl.session, tl.dm
+
+        # ── EXISTING LOGIC ─────────────────────────
         if not hasattr(tl,"session") or count >= _SESSION_RECYCLE:
-            # Close existing session to free socket/SSL resources
             if hasattr(tl,"session"):
                 try: tl.session.close()
                 except: pass
-            with il: time.sleep(0.3)
-            dm=DataDomeManager(); tl.session=create_thread_session(cm,dm); tl.dm=dm
+
+            with il:
+                time.sleep(0.3)
+
+            dm = DataDomeManager()
+            tl.session = create_thread_session(cm, dm)
+            tl.dm = dm
             tl.call_count = 0
         else:
             tl.call_count = count + 1
+
         tl.session.proxies.update(geo_rotator.get_proxies())
-        return tl.session,tl.dm
+
+        return tl.session, tl.dm
 
     # Per-account: parse flexible format then call processaccount
     def _parse_line(line):
@@ -1573,7 +1602,7 @@ def run_checker(uid,combo_file,result_folder,limit,threads,stop_event,
 
 
                 # ─────────────────────────────────────────────
-                # SAFE SESSION REFRESH (NO CRASH)
+                # FAST + SAFE SESSION COOLDOWN
                 # ─────────────────────────────────────────────
                 try:
                     current_processed = done[0]
@@ -1589,30 +1618,20 @@ def run_checker(uid,combo_file,result_folder,limit,threads,stop_event,
 
                     try:
                         log.info(
-                            f"[{uid}] 🔄 Refreshing session "
+                            f"[{uid}] 🔄 Cooldown "
                             f"({current_processed:,} processed)"
                         )
 
-                        # Save checkpoint FIRST
+                        # Save checkpoint immediately
                         try:
                             with _ckpt_lock:
                                 _flush_checkpoint()
                         except Exception as e:
                             log.warning(
-                                f"[{uid}] checkpoint flush error: {e}"
+                                f"[{uid}] checkpoint error: {e}"
                             )
 
-                        # Clear thread-local sessions ONLY
-                        # Forces fresh requests.Session() next request
-                        try:
-                            if hasattr(_dty_module, "_thread_local"):
-                                _dty_module._thread_local.__dict__.clear()
-                        except Exception as e:
-                            log.warning(
-                                f"[{uid}] session clear error: {e}"
-                            )
-
-                        # Cooldown (mimic Ctrl+C restart)
+                        # Pause only
                         log.info(
                             f"[{uid}] ⏳ Sleeping "
                             f"{SESSION_ROTATE_SLEEP}s..."
@@ -1624,13 +1643,13 @@ def run_checker(uid,combo_file,result_folder,limit,threads,stop_event,
                         _rotation_target += SESSION_ROTATE_EVERY
 
                         log.info(
-                            f"[{uid}] ✅ Session refreshed"
+                            f"[{uid}] ✅ Resuming checker"
                         )
 
                     except Exception as rot_err:
-                        # NEVER crash checker
+                        # Never kill checker
                         log.exception(
-                            f"[{uid}] refresh failed: {rot_err}"
+                            f"[{uid}] cooldown error: {rot_err}"
                         )
 
                     finally:
