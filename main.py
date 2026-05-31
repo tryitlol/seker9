@@ -2670,66 +2670,225 @@ async def cmd_status(update,context):
 async def cmd_check(update,context):
     """Show live stats card — also works after checking finishes."""
     uid=str(update.effective_user.id)
-    try: await update.message.delete()
-    except: pass
-    with sessions_lock: sess=active_sessions.get(uid)
+
+    try:
+        await update.message.delete()
+    except:
+        pass
+
+    with sessions_lock:
+        sess=active_sessions.get(uid)
+
     if not sess or sess.get("status") not in ("checking","done"):
-        m=await update.effective_chat.send_message("ℹ️ No active checking session.\nUse /start to begin.",parse_mode=ParseMode.HTML)
-        if m: track(uid,m.message_id)
+        m=await update.effective_chat.send_message(
+            "ℹ️ No active checking session.\nUse /start to begin.",
+            parse_mode=ParseMode.HTML
+        )
+        if m:
+            track(uid,m.message_id)
         return
 
     status=sess.get("status","checking")
     ls2=sess.get("live_stats")
-    lk=sess.get("lvl_key","lvl_all"); ck=sess.get("cf_key","cf_both")
-    ll=LEVEL_OPTIONS.get(lk,LEVEL_OPTIONS["lvl_all"])["label"]
-    cl=CLEAN_OPTIONS.get(ck,CLEAN_OPTIONS["cf_both"])["label"]
+
+    lk=sess.get("lvl_key","lvl_all")
+    ck=sess.get("cf_key","cf_both")
+
+    ll=LEVEL_OPTIONS.get(
+        lk,
+        LEVEL_OPTIONS["lvl_all"]
+    )["label"]
+
+    cl=CLEAN_OPTIONS.get(
+        ck,
+        CLEAN_OPTIONS["cf_both"]
+    )["label"]
 
     # ── If session is done, use stored final_stats directly ──────────────
     if status=="done":
+
         display_stats=sess.get("final_stats") or {}
+
         if not display_stats and ls2:
-            # fallback: compute from live_stats + prev_stats
+
             _cs=ls2.get_stats()
             _ps=sess.get("prev_stats",{})
             _pp=sess.get("prev_processed",0)
+
             display_stats=dict(_cs)
+
             if _ps:
-                for _k in ("valid","invalid","clean","not_clean","has_codm","no_codm"):
-                    display_stats[_k]=_cs.get(_k,0)+_ps.get(_k,0)
-            display_stats["total"]=_pp+_cs.get("total",0)
+                for _k in (
+                    "valid",
+                    "invalid",
+                    "clean",
+                    "not_clean",
+                    "has_codm",
+                    "no_codm"
+                ):
+                    display_stats[_k]=(
+                        _cs.get(_k,0)
+                        + _ps.get(_k,0)
+                    )
+
+            display_stats["total"]=(
+                _pp
+                + _cs.get("total",0)
+            )
+
         t=display_stats.get("total",0)
-        orig=sess.get("orig_total",t)
-        rf_path=sess.get("result_folder") if sess else None
-        card=stats_card(t,orig,display_stats,ll,cl,result_folder=rf_path)
-        # Append finished label
-        card=card.rstrip()+"<b>\n\n✅ Checking finished!</b>"
-        m=await update.effective_chat.send_message(card,parse_mode=ParseMode.HTML)
-        if m: track(uid,m.message_id)
+
+        orig=sess.get(
+            "orig_total",
+            t
+        )
+
+        rf_path=sess.get(
+            "result_folder"
+        ) if sess else None
+
+        card=stats_card(
+            t,
+            orig,
+            display_stats,
+            ll,
+            cl,
+            result_folder=rf_path
+        )
+
+        card=(
+            card.rstrip()
+            + "<b>\n\n✅ Checking finished!</b>"
+        )
+
+        m=await update.effective_chat.send_message(
+            card,
+            parse_mode=ParseMode.HTML
+        )
+
+        if m:
+            track(uid,m.message_id)
+
         return
 
     # ── Active checking ──────────────────────────────────────────────────
+
     combo=sess.get("file")
-    cur_stats=ls2.get_stats() if ls2 else {}
+
+    cur_stats=(
+        ls2.get_stats()
+        if ls2 else {}
+    )
+
     with sessions_lock:
-        prev_s=active_sessions.get(uid,{}).get("prev_stats",{})
-        prev_proc=active_sessions.get(uid,{}).get("prev_processed",0)
-    orig=sess.get("orig_total",0)
-    curr_done=cur_stats.get("total",0)
-    done_count=prev_proc+curr_done
-    total_disp=orig if orig else done_count
-    if total_disp and done_count>total_disp: done_count=total_disp
+
+        sess_live=active_sessions.get(
+            uid,
+            {}
+        )
+
+        prev_s=sess_live.get(
+            "prev_stats",
+            {}
+        )
+
+        prev_proc=sess_live.get(
+            "prev_processed",
+            0
+        )
+
+    orig=sess.get(
+        "orig_total",
+        0
+    )
+
+    curr_done=cur_stats.get(
+        "total",
+        0
+    )
+
+    done_count=(
+        prev_proc
+        + curr_done
+    )
+
+    total_disp=(
+        orig
+        if orig
+        else done_count
+    )
+
+    if (
+        total_disp
+        and done_count>total_disp
+    ):
+        done_count=total_disp
+
     if prev_s:
+
         display_stats=dict(cur_stats)
-        for _k in ("valid","invalid","clean","not_clean","has_codm","no_codm"):
-            display_stats[_k]=cur_stats.get(_k,0)+prev_s.get(_k,0)
+
+        for _k in (
+            "valid",
+            "invalid",
+            "clean",
+            "not_clean",
+            "has_codm",
+            "no_codm"
+        ):
+            display_stats[_k]=(
+                cur_stats.get(_k,0)
+                + prev_s.get(_k,0)
+            )
+
         display_stats["total"]=done_count
+
     else:
+
         display_stats=dict(cur_stats)
+
         display_stats["total"]=done_count
-    rf_path=sess.get("result_folder") if sess else None
-    card=stats_card(done_count,total_disp,display_stats,ll,cl,result_folder=rf_path)
-    m=await update.effective_chat.send_message(card,parse_mode=ParseMode.HTML)
-    if m: track(uid,m.message_id)
+
+    # ── CHUNK MODE INFO ─────────────────────────────
+
+    display_stats["current_chunk"]=(
+        sess_live.get(
+            "current_chunk"
+        )
+    )
+
+    display_stats["total_chunks"]=(
+        sess_live.get(
+            "total_chunks"
+        )
+    )
+
+    display_stats["chunk_total"]=(
+        sess_live.get(
+            "chunk_total"
+        )
+    )
+
+    rf_path=sess.get(
+        "result_folder"
+    ) if sess else None
+
+    card=stats_card(
+        done_count,
+        total_disp,
+        display_stats,
+        ll,
+        cl,
+        result_folder=rf_path
+    )
+
+    m=await update.effective_chat.send_message(
+        card,
+        parse_mode=ParseMode.HTML
+    )
+
+    if m:
+        track(uid,m.message_id)
 
 async def cmd_myresultsfile(update,context):
     """Send a snapshot zip of current in-progress results — does NOT stop checking."""
