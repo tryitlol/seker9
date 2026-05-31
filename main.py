@@ -5,7 +5,7 @@
 ╚══════════════════════════════════════════════════════════╝
 """
 
-import os, sys, json, time, uuid, zipfile, logging, signal, traceback, math
+import os, sys, json, time, uuid, zipfile, logging, signal, traceback, math, shutil
 import asyncio, threading, io
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -299,7 +299,7 @@ def split_combo_file(combo_path, user_id, chunk_size=1000):
         with open(chunk_path, "w", encoding="utf-8") as cf:
             cf.write("\n".join(lines[start:end]))
 
-        chunk_files.append(chunk_path)
+        chunk_files.append(Path(chunk_path))
 
     return chunk_files, total_lines, total_chunks
 
@@ -907,7 +907,26 @@ def kb_filter():
 #  STATS CARD
 # ════════════════════════════════════════════
 def stats_card(done, total, stats, ll="", cl="", result_folder=None):
-    percent = int((done / total) * 100) if total else 0
+
+    # ── CHUNK DISPLAY TOTAL ────────────────────────
+    display_total = total
+
+    try:
+        if stats.get("current_chunk"):
+            display_total = stats.get(
+                "chunk_total",
+                total
+            )
+    except:
+        pass
+
+    percent = (
+        int((done / display_total) * 100)
+        if display_total else 0
+    )
+
+    if percent > 100:
+        percent = 100
 
     # Progress bar
     filled = int(percent / 10)
@@ -925,12 +944,18 @@ def stats_card(done, total, stats, ll="", cl="", result_folder=None):
             "total_chunks"
         )
 
+        chunk_total = stats.get(
+            "chunk_total",
+            1000
+        )
+
         if current_chunk and total_chunks:
             chunk_text = (
                 f"\n📂 File: "
                 f"{current_chunk}/"
                 f"{total_chunks}"
-                f"\n📄 Lines: 1000"
+                f"\n📄 Lines: "
+                f"{chunk_total:,}"
             )
     except:
         pass
@@ -948,7 +973,7 @@ def stats_card(done, total, stats, ll="", cl="", result_folder=None):
 
 [{bar}] {percent}%
 
-📦 {done:,} / {total:,}
+📦 {done:,} / {display_total:,}
 {chunk_text}
 
 ━━━━━━━━━━━━━━━━━━━
@@ -1248,6 +1273,21 @@ def process_chunked_checker(
         final_stats = {}
 
         for idx, chunk_file in enumerate(chunk_files, start=1):
+        
+        chunk_lines = sum(
+            1 for _ in open(
+                chunk_file,
+                "r",
+                encoding="utf-8",
+                errors="ignore"
+            )
+        )
+
+        with sessions_lock:
+            if u in active_sessions:
+                active_sessions[u]["current_chunk"] = idx
+                active_sessions[u]["total_chunks"] = total_chunks
+                active_sessions[u]["chunk_total"] = chunk_lines
 
             # stop support
             if nstop and nstop.is_set():
@@ -1308,17 +1348,16 @@ def process_chunked_checker(
 
             # RUN YOUR NORMAL CHECKER
             fin = run_checker(
-                u,
-                chunk_file,
-                rf_p,
-                lim_n,
-                threshold,
-                nstop,
-                bot_token,
-                cf_filter=cf_filter,
-                result_folder=result_folder,
+                uid=u,
+                combo_file=chunk_file,
+                result_folder=rf_p,
+                limit=chunk_lines,
+                threads=cfg["default_threads"],
+                stop_event=nstop,
+                bot_token=bot_token,
                 chat_id=chat_id,
-                loop=loop
+                thresholds=threshold,
+                clean_filter=cf_filter
             )
 
             # merge stats
