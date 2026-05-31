@@ -5,7 +5,7 @@
 ╚══════════════════════════════════════════════════════════╝
 """
 
-import os, sys, json, time, uuid, zipfile, logging, signal, traceback
+import os, sys, json, time, uuid, zipfile, logging, signal, traceback, math
 import asyncio, threading, io
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -271,6 +271,37 @@ DEFAULT_CONFIG = {
     "cooldown_sessions":  None,
     "cooldown_minutes":   30,
 }
+
+CHUNK_SIZE = 1000
+
+def split_combo_file(combo_path, user_id, chunk_size=1000):
+    """Split combo file into 1000-line chunks"""
+    chunk_folder = f"combo_chunks/{user_id}"
+    os.makedirs(chunk_folder, exist_ok=True)
+
+    with open(combo_path, "r", encoding="utf-8", errors="ignore") as f:
+        lines = [line.strip() for line in f if line.strip()]
+
+    total_lines = len(lines)
+    total_chunks = math.ceil(total_lines / chunk_size)
+
+    chunk_files = []
+
+    for i in range(total_chunks):
+        start = i * chunk_size
+        end = start + chunk_size
+
+        chunk_path = os.path.join(
+            chunk_folder,
+            f"chunk_{i+1}.txt"
+        )
+
+        with open(chunk_path, "w", encoding="utf-8") as cf:
+            cf.write("\n".join(lines[start:end]))
+
+        chunk_files.append(chunk_path)
+
+    return chunk_files, total_lines, total_chunks
 
 def load_config() -> dict:
     if CONFIG_FILE.exists():
@@ -882,12 +913,34 @@ def stats_card(done, total, stats, ll="", cl="", result_folder=None):
     filled = int(percent / 10)
     bar = "█" * filled + "░" * (10 - filled)
 
+    # ── CHUNK INFO ─────────────────────────
+    chunk_text = ""
+
+    try:
+        current_chunk = stats.get(
+            "current_chunk"
+        )
+
+        total_chunks = stats.get(
+            "total_chunks"
+        )
+
+        if current_chunk and total_chunks:
+            chunk_text = (
+                f"\n📂 File: "
+                f"{current_chunk}/"
+                f"{total_chunks}"
+                f"\n📄 Lines: 1000"
+            )
+    except:
+        pass
+
     # IMPORTANT: use original stat keys
     valid = stats.get("valid", 0)
     invalid = stats.get("invalid", 0)
     clean = stats.get("clean", 0)
     not_clean = stats.get("not_clean", 0)
-    codm = stats.get("has_codm", 0)   # <- original working key
+    codm = stats.get("has_codm", 0)
     no_codm = stats.get("no_codm", 0)
 
     text = f"""<pre>
@@ -896,6 +949,7 @@ def stats_card(done, total, stats, ll="", cl="", result_folder=None):
 [{bar}] {percent}%
 
 📦 {done:,} / {total:,}
+{chunk_text}
 
 ━━━━━━━━━━━━━━━━━━━
 ✅ Valid      : {valid:,}
@@ -910,63 +964,110 @@ def stats_card(done, total, stats, ll="", cl="", result_folder=None):
     # ── ORIGINAL WORKING LOGIC ─────────────────────────
     if result_folder:
         try:
-            lvl, ctr, hits = parse_result_stats(result_folder)
+            lvl, ctr, hits = parse_result_stats(
+                result_folder
+            )
 
-            live_codm = stats.get("has_codm", 0)
+            live_codm = stats.get(
+                "has_codm",
+                0
+            )
 
             # Sync parsed stats with live stats
-            if live_codm > 0 and hits > 0 and hits != live_codm:
+            if (
+                live_codm > 0
+                and hits > 0
+                and hits != live_codm
+            ):
                 scale = live_codm / hits
+
                 lvl = {
-                    k: max(1, round(v * scale))
+                    k: max(
+                        1,
+                        round(v * scale)
+                    )
                     for k, v in lvl.items()
                 }
+
                 ctr = {
-                    k: max(1, round(v * scale))
+                    k: max(
+                        1,
+                        round(v * scale)
+                    )
                     for k, v in ctr.items()
                 }
+
                 hits = live_codm
 
-            elif live_codm > 0 and hits == 0:
+            elif (
+                live_codm > 0
+                and hits == 0
+            ):
                 hits = live_codm
 
             if hits > 0:
 
                 # LEVELS
-                text += "\n📈 Level Distribution\n\n"
+                text += (
+                    "\n📈 Level Distribution\n\n"
+                )
 
                 for rng, cnt in lvl.items():
-                    pct2 = cnt / hits * 100
+                    pct2 = (
+                        cnt / hits * 100
+                    )
 
-                    filled2 = int(pct2 // 10)
+                    filled2 = int(
+                        pct2 // 10
+                    )
+
                     bar2 = (
-                        "█" * filled2 +
-                        "░" * (10 - filled2)
+                        "█" * filled2
+                        + "░" * (
+                            10 - filled2
+                        )
                     )
 
                     text += (
                         f"{rng:<9} "
                         f"{bar2} "
-                        f"{cnt:>3} ({pct2:.1f}%)\n"
+                        f"{cnt:>3} "
+                        f"({pct2:.1f}%)\n"
                     )
 
                 # SERVERS
-                text += "\n━━━━━━━━━━━━━━━━━━━\n"
-                text += "\n🌏 Server Distribution\n\n"
+                text += (
+                    "\n━━━━━━━━━━━━━━━━━━━\n"
+                )
 
-                for country, cnt in list(ctr.items())[:6]:
-                    pct3 = cnt / hits * 100
+                text += (
+                    "\n🌏 Server Distribution\n\n"
+                )
 
-                    filled3 = int(pct3 // 10)
+                for country, cnt in list(
+                    ctr.items()
+                )[:6]:
+
+                    pct3 = (
+                        cnt / hits * 100
+                    )
+
+                    filled3 = int(
+                        pct3 // 10
+                    )
+
                     bar3 = (
-                        "█" * filled3 +
-                        "░" * (10 - filled3)
+                        "█" * filled3
+                        + "░" * (
+                            10 - filled3
+                        )
                     )
 
                     text += (
                         f"{country:<9} "
                         f"{bar3} "
-                        f"{cnt:>3} ({pct3:.1f}%)\n"
+                        f"{cnt:>3} "
+                        f"({pct3:.1f}%)\n"
                     )
 
         except:
@@ -977,18 +1078,29 @@ def stats_card(done, total, stats, ll="", cl="", result_folder=None):
 
     if ll:
         if "all" in str(ll).lower():
-            filters.append("⭐ ALL Levels")
+            filters.append(
+                "⭐ ALL Levels"
+            )
         else:
-            filters.append(f"⭐ Level {ll}+")
+            filters.append(
+                f"⭐ Level {ll}+"
+            )
 
     if cl:
-        filters.append("✅ Clean Only")
+        filters.append(
+            "✅ Clean Only"
+        )
 
     if filters:
-        text += "\n━━━━━━━━━━━━━━━━━━\n\n"
+        text += (
+            "\n━━━━━━━━━━━━━━━━━━\n\n"
+        )
         text += "\n".join(filters)
 
-    text += "\n\n⏹ /stop or /cancel"
+    text += (
+        "\n\n⏹ /stop or /cancel"
+    )
+
     text += "\n</pre>"
 
     return text
@@ -1502,28 +1614,9 @@ def run_checker(uid,combo_file,result_folder,limit,threads,stop_event,
                             _proxy_errors[_pf] = _proxy_errors.get(_pf,0)+1
 
             with fl:
-                done[0] += 1
-
-            # Mark this index as done in the checkpoint
+                done[0]+=1
+            # Mark this index as done in the checkpoint (safe against crash-resume duplicates)
             _mark_done(i)
-
-            # Auto restart every 300 processed lines
-            if done[0] % 300 == 0:
-                with _ckpt_lock:
-                    _flush_checkpoint()
-
-                try:
-                    from __main__ import active_sessions, sessions_lock
-
-                    with sessions_lock:
-                        if uid in active_sessions:
-                            active_sessions[uid]["stop_continue"] = True
-                except:
-                    pass
-
-                log.info(f"[{uid}] Auto-recycle at {done[0]} lines")
-
-                stop_event.set()
         except Exception as _proc_err:
             with _fail_lock:
                 _fail_count[0] += 1
@@ -1555,12 +1648,7 @@ def run_checker(uid,combo_file,result_folder,limit,threads,stop_event,
 
             while _idx < len(_items) or _active_futs:
                 if stop_event.is_set():
-                    with _ckpt_lock:
-                        _flush_checkpoint()
-
-                    for f in list(_active_futs):
-                        f.cancel()
-
+                    for f in list(_active_futs): f.cancel()
                     ex.shutdown(wait=False, cancel_futures=True)
                     break
 
@@ -3775,96 +3863,61 @@ async def on_callback(update,context):
                 with sessions_lock: s2=active_sessions.get(uid,{})
                 is_continuing=s2.get("stop_continue",False)
                 if is_continuing:
-                    # Auto-recycle only.
-                    # Save progress and relaunch checker without sending results.
-
-                    new_stop = threading.Event()
-
+                    # Send partial results but keep combo file alive
+                    asyncio.run_coroutine_threadsafe(
+                        deliver_results(context.bot,cid,uid,zp,st,combo_file=None,partial=True),loop)
+                    # Reset stop event and re-launch checker for remaining lines
+                    new_stop=threading.Event()
                     with sessions_lock:
                         if uid in active_sessions:
-                            active_sessions[uid]["stop_event"] = new_stop
-                            active_sessions[uid]["stop_continue"] = False
-                            active_sessions[uid]["status"] = "checking"
-
+                            active_sessions[uid]["stop_event"]=new_stop
+                            active_sessions[uid]["stop_continue"]=False
+                            active_sessions[uid]["status"]="checking"
                     _checker_semaphore.release()
                     _status_stop.set()
-
                     # Launch new bg thread for remaining lines
-                    new_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-                    # KEEP SAME RESULT FOLDER
-                    new_rf = rf
-
+                    new_ts=datetime.now().strftime("%Y%m%d_%H%M%S")
+                    new_rf=RESULTS_DIR/uid/new_ts; new_rf.mkdir(parents=True,exist_ok=True)
+                    with sessions_lock:
+                        if uid in active_sessions:
+                            active_sessions[uid]["result_folder"]=str(new_rf)
                     def _continue_bg():
                         _enqueue(uid)
-                        _checker_semaphore.acquire()
-                        _dequeue(uid)
-
+                        _checker_semaphore.acquire(); _dequeue(uid)
                         try:
-                            st2 = run_checker(
-                                uid,
-                                combo,
-                                new_rf,
-                                lim,
-                                threads,
-                                new_stop,
-                                btok,
-                                cid,
-                                thr,
-                                clf,
-                                is_resume=True
-                            )
-
-                            u3 = load_users()
-
+                            st2=run_checker(uid,combo,new_rf,lim,threads,new_stop,btok,cid,thr,clf,is_resume=True)
+                            u3=load_users()
                             if uid in u3:
-                                u3[uid]["total_checked"] += st2.get("total", 0)
+                                u3[uid]["total_checked"]+=st2.get("total",0)
                                 save_users(u3)
-
-                            # ONLY SEND RESULTS WHEN ACTUALLY FINISHED
-                            if not new_stop.is_set():
-                                zo2 = new_rf / f"results_{uid}_{new_ts}.zip"
-                                zp2 = zip_results(new_rf, zo2)
-
-                                asyncio.run_coroutine_threadsafe(
-                                    deliver_results(
-                                        context.bot,
-                                        cid,
-                                        uid,
-                                        zp2,
-                                        st2,
-                                        combo_file=combo
-                                    ),
-                                    loop
-                                )
-
-                        except Exception as ex2:
+                            zo2=new_rf/f"results_{uid}_{new_ts}.zip"; zp2=zip_results(new_rf,zo2)
+                            note2=" (Stopped)" if new_stop.is_set() else ""
                             asyncio.run_coroutine_threadsafe(
-                                context.bot.send_message(
-                                    chat_id=cid,
-                                    text=f"❌ <b>Error:</b> <code>{str(ex2)[:300]}</code>",
-                                    parse_mode=ParseMode.HTML
-                                ),
-                                loop
-                            )
-
+                                deliver_results(context.bot,cid,uid,zp2,st2,combo_file=combo,note=note2),loop)
+                        except Exception as ex2:
+                            asyncio.run_coroutine_threadsafe(context.bot.send_message(
+                                chat_id=cid,text=f"❌ <b>Error:</b> <code>{str(ex2)[:300]}</code>",
+                                parse_mode=ParseMode.HTML),loop)
                         finally:
-                            _checker_semaphore.release()
-                            inc_session(uid)
-                            del_combo(combo)
+                            _checker_semaphore.release(); inc_session(uid); del_combo(combo)
                             clear_persisted_session(uid)
-
                             with sessions_lock:
                                 if uid in active_sessions:
-                                    active_sessions[uid]["status"] = "done"
-
-                    threading.Thread(
-                        target=_continue_bg,
-                        daemon=True,
-                        name=f"checker-{uid}-resume"
-                    ).start()
-
-                    return
+                                    active_sessions[uid]["status"]="done"
+                                    try:
+                                        _ls=active_sessions[uid].get("live_stats")
+                                        _ps=active_sessions[uid].get("prev_stats",{})
+                                        _pp=active_sessions[uid].get("prev_processed",0)
+                                        _cs=_ls.get_stats() if _ls else {}
+                                        _fs=dict(_cs)
+                                        if _ps:
+                                            for _k in ("valid","invalid","clean","not_clean","has_codm","no_codm"):
+                                                _fs[_k]=_cs.get(_k,0)+_ps.get(_k,0)
+                                        _fs["total"]=_pp+_cs.get("total",0)
+                                        active_sessions[uid]["final_stats"]=_fs
+                                    except: pass
+                    threading.Thread(target=_continue_bg,daemon=True,name=f"checker-cont-{uid}").start()
+                    return  # exit current bg, _continue_bg takes over
                 else:
                     note=" (Stopped)" if stop_ev.is_set() else ""
                     asyncio.run_coroutine_threadsafe(
@@ -5394,6 +5447,186 @@ async def _adm_continue_by_filter(query, bot, mode):
             "first_name":users_db.get(uid2,{}).get("first_name",""),
             "status":"checking","result_folder":str(rf2),"orig_total":disp2,
         })
+        
+        def process_chunked_checker(
+            u,
+            fp,
+            rf_p,
+            lim_n,
+            threshold,
+            nstop,
+            bot_token,
+            cf_filter=None,
+            result_folder=None,
+            chat_id=None,
+            loop=None
+        ):
+            try:
+                # split into chunks
+                chunk_files, total_lines, total_chunks = split_combo_file(
+                    fp,
+                    u,
+                    CHUNK_SIZE
+                )
+
+                if not chunk_files:
+                    return {
+                        "error": "No valid combo lines found"
+                    }
+
+                print(
+                    f"[CHUNK MODE] "
+                    f"{total_lines} lines "
+                    f"-> {total_chunks} chunks"
+                )
+
+                final_stats = {}
+
+                for idx, chunk_file in enumerate(chunk_files, start=1):
+
+                    # stop support
+                    if nstop and nstop.is_set():
+                        print("[STOPPED]")
+                        break
+
+                    print(
+                        f"[CHECKING] "
+                        f"Chunk {idx}/{total_chunks}"
+                    )
+
+                    # notify chunk start
+                    try:
+                        if chat_id and loop:
+                            asyncio.run_coroutine_threadsafe(
+                                bot.send_message(
+                                    chat_id=chat_id,
+                                    text=(
+                                        f"📂 Checking file "
+                                        f"{idx}/{total_chunks}\n"
+                                        f"📄 Lines: 1000"
+                                    )
+                                ),
+                                loop
+                            )
+                    except Exception as e:
+                        print("chunk notify error:", e)
+
+                    # reset live stats
+                    try:
+                        with sessions_lock:
+                            if u in active_sessions:
+                                live_stats = active_sessions[u].get(
+                                    "live_stats"
+                                )
+
+                                if live_stats:
+                                    for attr in [
+                                        "valid",
+                                        "invalid",
+                                        "clean",
+                                        "not_clean",
+                                        "has_codm",
+                                        "no_codm",
+                                        "total",
+                                        "checked"
+                                    ]:
+                                        try:
+                                            setattr(
+                                                live_stats,
+                                                attr,
+                                                0
+                                            )
+                                        except:
+                                            pass
+                    except:
+                        pass
+
+                    # RUN YOUR NORMAL CHECKER
+                    fin = run_checker(
+                        u,
+                        chunk_file,
+                        rf_p,
+                        lim_n,
+                        threshold,
+                        nstop,
+                        bot_token,
+                        cf_filter=cf_filter,
+                        result_folder=result_folder,
+                        chat_id=chat_id,
+                        loop=loop
+                    )
+
+                    # merge stats
+                    if isinstance(fin, dict):
+                        for k, v in fin.items():
+                            if isinstance(v, (int, float)):
+                                final_stats[k] = (
+                                    final_stats.get(k, 0) + v
+                                )
+
+                    print(
+                        f"[DONE] "
+                        f"Chunk {idx}/{total_chunks}"
+                    )
+
+                    # delete chunk after checking
+                    try:
+                        chunk_file.unlink()
+                    except:
+                        pass
+
+                # cleanup folder
+                try:
+                    shutil.rmtree(
+                        f"combo_chunks/{u}"
+                    )
+                except:
+                    pass
+
+                # final message
+                try:
+                    if chat_id and loop:
+                        asyncio.run_coroutine_threadsafe(
+                            bot.send_message(
+                                chat_id=chat_id,
+                                text=(
+                                    "✅ ALL FILES CHECKED\n\n"
+                                    f"📂 Chunks: "
+                                    f"{total_chunks}\n"
+                                    f"📄 Total Lines: "
+                                    f"{total_lines}"
+                                )
+                            ),
+                            loop
+                        )
+                except:
+                    pass
+
+                return final_stats
+
+            except Exception as e:
+                print(
+                    f"[CHUNK ERROR] {e}"
+                )
+
+                try:
+                    if chat_id and loop:
+                        asyncio.run_coroutine_threadsafe(
+                            bot.send_message(
+                                chat_id=chat_id,
+                                text=(
+                                    "❌ Chunk checker failed\n"
+                                    f"{e}"
+                                )
+                            ),
+                            loop
+                        )
+                except:
+                    pass
+
+                return {
+                    "error": str(e)
+                }
 
         def _make_cont_bg(u,fp,rf_p,lim_n,ll_o,cl_o,nstop,cid_n,disp_n,ts_n,cfg_n):
             def _bg():
@@ -5406,7 +5639,7 @@ async def _adm_continue_by_filter(query, bot, mode):
                 with sessions_lock:
                     if active_sessions.get(u,{}).get("status")!="checking":
                         _checker_semaphore.release(); return
-                fin=run_checker(u,fp,rf_p,lim_n,ll_o["threshold"],nstop,
+                fin=process_chunked_checker(u,fp,rf_p,lim_n,ll_o["threshold"],nstop,
                                 cfg_n["bot_token"],cf_filter=cl_o["filter"],
                                 result_folder=rf_p,chat_id=cid_n,loop=loop)
                 _checker_semaphore.release()
@@ -5443,6 +5676,8 @@ async def _adm_continue_by_filter(query, bot, mode):
     await query.edit_message_text(
         f"▶️ <b>Resumed ({label})</b>\n<code>{resumed}</code> session(s) restarted.",
         parse_mode=ParseMode.HTML)
+        
+        
 
 
 
