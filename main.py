@@ -1252,6 +1252,8 @@ def process_chunked_checker(
     loop=None
 ):
     try:
+        cfg = load_config()
+
         # split into chunks
         chunk_files, total_lines, total_chunks = split_combo_file(
             fp,
@@ -1272,22 +1274,28 @@ def process_chunked_checker(
 
         final_stats = {}
 
-        for idx, chunk_file in enumerate(chunk_files, start=1):
-        
-        chunk_lines = sum(
-            1 for _ in open(
-                chunk_file,
-                "r",
-                encoding="utf-8",
-                errors="ignore"
-            )
-        )
+        for idx, chunk_file in enumerate(
+            chunk_files,
+            start=1
+        ):
 
-        with sessions_lock:
-            if u in active_sessions:
-                active_sessions[u]["current_chunk"] = idx
-                active_sessions[u]["total_chunks"] = total_chunks
-                active_sessions[u]["chunk_total"] = chunk_lines
+            # count lines in current chunk
+            chunk_lines = sum(
+                1
+                for _ in open(
+                    chunk_file,
+                    "r",
+                    encoding="utf-8",
+                    errors="ignore"
+                )
+            )
+
+            # update progress info
+            with sessions_lock:
+                if u in active_sessions:
+                    active_sessions[u]["current_chunk"] = idx
+                    active_sessions[u]["total_chunks"] = total_chunks
+                    active_sessions[u]["chunk_total"] = chunk_lines
 
             # stop support
             if nstop and nstop.is_set():
@@ -1308,20 +1316,25 @@ def process_chunked_checker(
                             text=(
                                 f"📂 Checking file "
                                 f"{idx}/{total_chunks}\n"
-                                f"📄 Lines: 1000"
+                                f"📄 Lines: {chunk_lines:,}"
                             )
                         ),
                         loop
                     )
             except Exception as e:
-                print("chunk notify error:", e)
+                print(
+                    "chunk notify error:",
+                    e
+                )
 
             # reset live stats
             try:
                 with sessions_lock:
                     if u in active_sessions:
-                        live_stats = active_sessions[u].get(
-                            "live_stats"
+
+                        live_stats = (
+                            active_sessions[u]
+                            .get("live_stats")
                         )
 
                         if live_stats:
@@ -1346,7 +1359,7 @@ def process_chunked_checker(
             except:
                 pass
 
-            # RUN YOUR NORMAL CHECKER
+            # run checker
             fin = run_checker(
                 uid=u,
                 combo_file=chunk_file,
@@ -1363,9 +1376,15 @@ def process_chunked_checker(
             # merge stats
             if isinstance(fin, dict):
                 for k, v in fin.items():
-                    if isinstance(v, (int, float)):
+                    if isinstance(
+                        v,
+                        (int, float)
+                    ):
                         final_stats[k] = (
-                            final_stats.get(k, 0) + v
+                            final_stats.get(
+                                k,
+                                0
+                            ) + v
                         )
 
             print(
@@ -1375,7 +1394,17 @@ def process_chunked_checker(
 
             # delete chunk after checking
             try:
-                chunk_file.unlink()
+                if hasattr(
+                    chunk_file,
+                    "unlink"
+                ):
+                    chunk_file.unlink()
+                else:
+                    Path(
+                        chunk_file
+                    ).unlink(
+                        missing_ok=True
+                    )
             except:
                 pass
 
@@ -1398,7 +1427,7 @@ def process_chunked_checker(
                             f"📂 Chunks: "
                             f"{total_chunks}\n"
                             f"📄 Total Lines: "
-                            f"{total_lines}"
+                            f"{total_lines:,}"
                         )
                     ),
                     loop
@@ -1409,6 +1438,7 @@ def process_chunked_checker(
         return final_stats
 
     except Exception as e:
+
         print(
             f"[CHUNK ERROR] {e}"
         )
