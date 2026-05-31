@@ -1238,7 +1238,57 @@ def merge_stats(base: dict, extra: dict) -> dict:
         result[k]=result.get(k,0)+extra.get(k,0)
     return result
 
+# =================================================================
+# HELPER: Split combo file into chunks
+# =================================================================
+
+def split_combo_file(combo_path, uid, chunk_size=1000):
+    """
+    Split combo file into chunks of chunk_size lines each.
+    Returns (chunk_files, total_lines, total_chunks)
+    """
+    import shutil
+    
+    chunk_dir = Path(f"combo_chunks/{uid}")
+    chunk_dir.mkdir(parents=True, exist_ok=True)
+    
+    chunk_files = []
+    total_lines = 0
+    
+    # Read all valid combos
+    combos = []
+    try:
+        with open(combo_path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if line and ":" in line:
+                    combos.append(line)
+                    total_lines += 1
+    except Exception as e:
+        print(f"Error reading combo: {e}")
+        return [], 0, 0
+    
+    total_chunks = (total_lines + chunk_size - 1) // chunk_size
+    
+    # Split into chunks
+    for i in range(total_chunks):
+        start_idx = i * chunk_size
+        end_idx = min(start_idx + chunk_size, total_lines)
+        chunk_combos = combos[start_idx:end_idx]
+        
+        chunk_file = chunk_dir / f"chunk_{i+1}.txt"
+        with open(chunk_file, "w", encoding="utf-8") as f:
+            f.write("\n".join(chunk_combos))
+        
+        chunk_files.append(chunk_file)
+    
+    return chunk_files, total_lines, total_chunks
+
 # Replace the process_chunked_checker function with this new version:
+
+# =================================================================
+# ===================== CHUNKED CHECKER V2 =====================
+# =================================================================
 
 def process_chunked_checker(
     u,
@@ -1256,6 +1306,7 @@ def process_chunked_checker(
     """
     Process combo file in 1K chunks - each chunk sends results immediately,
     then continues to next chunk automatically.
+    Cumulative stats across all chunks.
     """
     try:
         cfg = load_config()
@@ -1264,7 +1315,7 @@ def process_chunked_checker(
         chunk_files, total_lines, total_chunks = split_combo_file(
             fp,
             u,
-            CHUNK_SIZE  # 1000 lines per chunk
+            CHUNK_SIZE
         )
 
         if not chunk_files:
@@ -1278,7 +1329,25 @@ def process_chunked_checker(
             f"-> {total_chunks} chunks (1K each)"
         )
 
-        final_stats = {}
+        # Track cumulative stats across ALL chunks
+        final_stats = {
+            "valid": 0,
+            "invalid": 0,
+            "clean": 0,
+            "not_clean": 0,
+            "has_codm": 0,
+            "no_codm": 0,
+            "total": 0,
+            "checked": 0,
+        }
+
+        # Track cumulative level/server distribution
+        cumulative_level_dist = {}
+        cumulative_server_dist = {}
+
+        # Create a combined result folder for ALL chunks
+        combined_rf = Path(rf_p) / "combined_results"
+        combined_rf.mkdir(parents=True, exist_ok=True)
 
         for idx, chunk_file in enumerate(
             chunk_files,
@@ -1306,6 +1375,14 @@ def process_chunked_checker(
                 f"({chunk_lines} lines)"
             )
 
+            # Update session status
+            with sessions_lock:
+                if u in active_sessions:
+                    active_sessions[u]["status"] = "checking"
+                    active_sessions[u]["current_chunk"] = idx
+                    active_sessions[u]["total_chunks"] = total_chunks
+                    active_sessions[u]["chunk_total"] = chunk_lines
+
             # Notify start of new chunk
             if chat_id and loop:
                 try:
@@ -1323,8 +1400,8 @@ def process_chunked_checker(
                 except Exception as e:
                     print("chunk notify error:", e)
 
-            # Create a separate result folder for this chunk
-            chunk_rf = Path(rf_p) / f"chunk_{idx}"
+            # Create temp result folder for this chunk
+            chunk_rf = combined_rf / f"chunk_{idx}"
             chunk_rf.mkdir(parents=True, exist_ok=True)
 
             # Reset live stats for this chunk
@@ -1356,6 +1433,18 @@ def process_chunked_checker(
                 clean_filter=cf_filter
             )
 
+            # Parse this chunk's stats
+            try:
+                lvl, ctr, hits = parse_result_stats(chunk_rf)
+                
+                # Merge into cumulative
+                for k, v in lvl.items():
+                    cumulative_level_dist[k] = cumulative_level_dist.get(k, 0) + v
+                for k, v in ctr.items():
+                    cumulative_server_dist[k] = cumulative_server_dist.get(k, 0) + v
+            except Exception as e:
+                print(f"Error parsing chunk {idx} stats: {e}")
+
             # Merge chunk stats into final stats
             if isinstance(fin, dict):
                 for k, v in fin.items():
@@ -1366,18 +1455,24 @@ def process_chunked_checker(
                 f"[DONE] Chunk {idx}/{total_chunks}"
             )
 
+            # Build stats dict with distribution for this chunk
+            chunk_stats = {
+                **final_stats,
+                "level_dist": cumulative_level_dist,
+                "server_dist": cumulative_server_dist,
+                "current_chunk": idx,
+                "total_chunks": total_chunks,
+            }
+
             # ZIP AND SEND RESULTS IMMEDIATELY FOR THIS CHUNK
             ts_chunk = datetime.now().strftime("%Y%m%d_%H%M%S")
             zip_name = f"results_{u}_chunk_{idx}_{ts_chunk}.zip"
-            chunk_zip = chunk_rf.parent / zip_name
+            chunk_zip = combined_rf.parent / zip_name
             
             zip_results(chunk_rf, chunk_zip)
 
             # Send chunk results immediately
             if chat_id and loop and chunk_zip.exists():
-                # Get stats for this chunk
-                chunk_stats = fin if isinstance(fin, dict) else {}
-                
                 try:
                     asyncio.run_coroutine_threadsafe(
                         deliver_results(
@@ -1386,39 +1481,24 @@ def process_chunked_checker(
                             u, 
                             [chunk_zip], 
                             chunk_stats,
-                            combo_file=None,  # Don't delete original combo
-                            partial=False  # This is a complete chunk result
+                            combo_file=None,
+                            partial=False
                         ),
                         loop
                     )
                 except Exception as e:
                     print(f"Failed to send chunk {idx} results: {e}")
 
-            # Delete chunk file after processing
-            try:
-                if hasattr(chunk_file, "unlink"):
-                    chunk_file.unlink()
-                else:
-                    Path(chunk_file).unlink(missing_ok=True)
-            except:
-                pass
-
-            # Delete chunk result folder to save space
-            try:
-                import shutil
-                if chunk_rf.exists():
-                    shutil.rmtree(chunk_rf)
-            except:
-                pass
+            # DON'T DELETE - keep for final stats later
+            # (We'll clean up after ALL chunks done)
 
             # Small delay between chunks
             time.sleep(1)
 
-        # Cleanup chunk folder
-        try:
-            shutil.rmtree(f"combo_chunks/{u}")
-        except:
-            pass
+        # Update final stats with cumulative distribution
+        final_stats["level_dist"] = cumulative_level_dist
+        final_stats["server_dist"] = cumulative_server_dist
+        final_stats["total_chunks"] = total_chunks
 
         # Final message - ALL chunks done
         if chat_id and loop:
@@ -1440,10 +1520,19 @@ def process_chunked_checker(
             except:
                 pass
 
+        # NOW cleanup all chunk folders
+        try:
+            import shutil
+            # Clean up individual chunk folders
+            for chunk_folder in combined_rf.iterdir():
+                if chunk_folder.is_dir():
+                    shutil.rmtree(chunk_folder)
+        except:
+            pass
+
         return final_stats
 
     except Exception as e:
-
         print(f"[CHUNK ERROR] {e}")
 
         try:
